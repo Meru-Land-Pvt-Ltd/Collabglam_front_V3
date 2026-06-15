@@ -2,9 +2,8 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { CaretDown, GearSix, X } from "@phosphor-icons/react";
-import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/buttonComp";
-import { get } from "@/lib/api";
+import { get, post } from "@/lib/api";
 
 type NotificationTab = "all" | "read" | "unread";
 type NotificationSection = "Today" | "Older";
@@ -215,7 +214,6 @@ export default function NotificationPanel({
   onSettings,
   onMarkAllRead,
 }: NotificationPanelProps) {
-  const router = useRouter();
 
   const [activeTab, setActiveTab] = useState<NotificationTab>(defaultTab);
   const [activeCategory, setActiveCategory] =
@@ -227,6 +225,7 @@ export default function NotificationPanel({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [unreadCount, setUnreadCount] = useState(0);
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -290,8 +289,8 @@ export default function NotificationPanel({
         activeTab === "all"
           ? true
           : activeTab === "read"
-          ? item.read
-          : !item.read;
+            ? item.read
+            : !item.read;
 
       const matchesCategory =
         activeCategory === "All Notification"
@@ -312,18 +311,72 @@ export default function NotificationPanel({
     ].filter((group) => group.items.length > 0);
   }, [filteredNotifications]);
 
-  const handleMarkAllRead = () => {
+  const handleMarkAllRead = async () => {
+    if (!brandId || busy) return;
+
+    setBusy(true);
+
+    const hadUnread = sourceNotifications.some((item) => !item.read);
+
     setApiNotifications((prev) =>
       prev.map((item) => ({
         ...item,
         read: true,
       }))
     );
-    setUnreadCount(0);
-    onMarkAllRead?.();
+
+    if (hadUnread) {
+      setUnreadCount(0);
+    }
+
+    try {
+      await post("/notifications/brand/mark-all-read", { brandId });
+      onMarkAllRead?.();
+    } catch (e) {
+      console.error("Mark all read failed", e);
+    } finally {
+      setBusy(false);
+    }
   };
 
+  const handleNotificationRead = async (item: NotificationItem) => {
+    if (item.read) return;
+
+    setApiNotifications((prev) =>
+      prev.map((notification) =>
+        notification.id === item.id
+          ? { ...notification, read: true }
+          : notification
+      )
+    );
+
+    setUnreadCount((prev) => Math.max(0, prev - 1));
+
+    try {
+      await post("/notifications/brand/mark-read", {
+        brandId,
+        notificationId: item.id,
+      });
+    } catch (e) {
+      console.error("Mark notification read failed", e);
+
+      setApiNotifications((prev) =>
+        prev.map((notification) =>
+          notification.id === item.id
+            ? { ...notification, read: false }
+            : notification
+        )
+      );
+
+      setUnreadCount((prev) => prev + 1);
+    }
+  };
+
+
   if (!isOpen) return null;
+  const allRead =
+    sourceNotifications.length > 0 &&
+    sourceNotifications.every((item) => item.read);
 
   return (
     <div className="w-full overflow-hidden rounded-[0.75rem] border border-[#E6E6E6] bg-white shadow-[0_16px_40px_rgba(0,0,0,0.12)]">
@@ -349,11 +402,10 @@ export default function NotificationPanel({
                       setActiveCategory(option);
                       setIsCategoryOpen(false);
                     }}
-                    className={`flex h-[3.125rem] w-full items-center rounded-[0.5rem] px-4 py-5 text-left text-[0.875rem] font-medium leading-5 tracking-[0] text-[#1A1A1A] ${
-                      option === activeCategory
-                        ? "bg-[#EDEDED]"
-                        : "bg-white hover:bg-[#F7F7F7]"
-                    }`}
+                    className={`flex h-[3.125rem] w-full items-center rounded-[0.5rem] px-4 py-5 text-left text-[0.875rem] font-medium leading-5 tracking-[0] text-[#1A1A1A] ${option === activeCategory
+                      ? "bg-[#EDEDED]"
+                      : "bg-white hover:bg-[#F7F7F7]"
+                      }`}
                   >
                     {option}
                   </button>
@@ -363,15 +415,6 @@ export default function NotificationPanel({
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={onSettings}
-              aria-label="Open settings"
-              className="flex h-7 w-7 items-center justify-center rounded-[0.5rem] bg-white text-[#1A1A1A]"
-            >
-              <GearSix size={18} weight="regular" className="text-[#1A1A1A]" />
-            </button>
-
             <button
               type="button"
               onClick={onClose}
@@ -390,9 +433,8 @@ export default function NotificationPanel({
                 key={tab}
                 type="button"
                 onClick={() => setActiveTab(tab)}
-                className={`flex h-7 min-w-14 items-center justify-center rounded-[0.5rem] px-2 text-center text-[0.875rem] font-medium leading-5 tracking-[0] text-[#1A1A1A] ${
-                  activeTab === tab ? "bg-[#EDEDED]" : "bg-transparent"
-                }`}
+                className={`flex h-7 min-w-14 items-center justify-center rounded-[0.5rem] px-2 text-center text-[0.875rem] font-medium leading-5 tracking-[0] text-[#1A1A1A] ${activeTab === tab ? "bg-[#EDEDED]" : "bg-transparent"
+                  }`}
               >
                 {tab[0].toUpperCase() + tab.slice(1)}
               </button>
@@ -402,9 +444,10 @@ export default function NotificationPanel({
           <button
             type="button"
             onClick={handleMarkAllRead}
-            className="flex h-7 items-center justify-center rounded-[0.75rem] px-2 text-center text-[0.875rem] font-medium leading-5 tracking-[0] text-[#1A1A1A]"
+            disabled={busy || allRead}
+            className="flex h-7 items-center justify-center rounded-[0.75rem] px-2 text-center text-[0.875rem] font-medium leading-5 tracking-[0] text-[#1A1A1A] disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Mark all as read
+            {busy ? "Marking..." : allRead ? "All read" : "Mark all as read"}
           </button>
         </div>
 
@@ -432,11 +475,7 @@ export default function NotificationPanel({
                       <NotificationItemCard
                         key={item.id}
                         item={item}
-                        onView={() => {
-                          if (!item.actionPath) return;
-                          router.push(item.actionPath);
-                          onClose?.();
-                        }}
+                        onView={() => handleNotificationRead(item)}
                       />
                     ))}
                   </div>
@@ -458,7 +497,11 @@ function NotificationItemCard({
   onView: () => void;
 }) {
   return (
-    <div className="flex w-full items-start gap-3 rounded-[0.75rem] bg-white py-1">
+    <button
+      type="button"
+      onClick={onView}
+      className="flex w-full items-start gap-3 rounded-[0.75rem] bg-white py-1 text-left transition hover:bg-[#F9F9F9]"
+    >
       <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#F3F4F6] text-[0.75rem] font-semibold text-[#1A1A1A]">
         {item.initials}
       </div>
@@ -488,7 +531,7 @@ function NotificationItemCard({
           </span>
         </div>
 
-        <div className="flex items-center gap-2">
+        {/* <div className="flex items-center gap-2">
           {item.actionPath ? (
             <NotificationActionButton
               action={{
@@ -498,9 +541,9 @@ function NotificationItemCard({
               }}
             />
           ) : null}
-        </div>
+        </div> */}
       </div>
-    </div>
+    </button>
   );
 }
 
@@ -512,7 +555,10 @@ function NotificationActionButton({ action }: { action: NotificationAction }) {
     <Button
       variant={isPrimary ? "solid" : "outline"}
       size="sm"
-      onClick={action.onClick}
+      onClick={(e) => {
+        e.stopPropagation();
+        action.onClick?.();
+      }}
       className={[
         "my-0 rounded-[0.75rem] text-center text-[0.875rem] font-medium leading-5 tracking-[0] shadow-none",
         isCompact ? "h-8 min-w-fit px-3" : "h-[2.375rem] min-w-[5.125rem] px-6",

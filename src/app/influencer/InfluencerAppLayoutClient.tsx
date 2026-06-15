@@ -2,10 +2,10 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import BrandScaffold from "@/components/ui/brand/brandScaffold";
+import InfluencerScaffold from "@/components/ui/influencer/influencerScaffold";
 import { Loader } from "@/components/ui/loader";
 
-export default function BrandAppLayout({
+export default function InfluencerAppLayoutClient({
   children,
 }: {
   children: React.ReactNode;
@@ -14,21 +14,22 @@ export default function BrandAppLayout({
   const router = useRouter();
 
   const [checkingAuth, setCheckingAuth] = useState(true);
-  const [hasBrandId, setHasBrandId] = useState(false);
+  const [hasInfluencerId, setHasInfluencerId] = useState(false);
 
   const PUBLIC_NO_SCAFFOLD_ROUTES = useMemo(
     () => [
-      "/brand/login",
-      "/brand/signup",
-      "/brand/forgot-password",
-      "/brand/onboarding",
+      "/influencer/login",
+      "/influencer/signup",
+      "/influencer/forgot-password",
+      "/influencer/onboarding",
     ],
     []
   );
 
   const AUTH_NO_SCAFFOLD_ROUTES = useMemo(
     () => [
-      "/brand/influencer-invitation",
+      "/influencer/invitation",
+      "/influencer/brand-invitation",
     ],
     []
   );
@@ -46,27 +47,37 @@ export default function BrandAppLayout({
   useEffect(() => {
     if (isPublicNoScaffoldRoute) {
       setCheckingAuth(false);
-      setHasBrandId(true);
+      setHasInfluencerId(true);
       return;
     }
 
-    const token = window.localStorage.getItem("token");
+    const token =
+      window.localStorage.getItem("influencer_token") ||
+      window.localStorage.getItem("influencerToken") ||
+      window.localStorage.getItem("token") ||
+      window.localStorage.getItem("accessToken");
 
-    const brandId =
-      window.localStorage.getItem("brandId") ||
-      window.localStorage.getItem("currentBrandId");
+    const influencerId =
+      window.localStorage.getItem("influencerId") ||
+      window.localStorage.getItem("currentInfluencerId") ||
+      window.localStorage.getItem("influencer_id") ||
+      window.localStorage.getItem("userId") ||
+      window.localStorage.getItem("_id");
 
-    if (!token || !brandId) {
-      setHasBrandId(false);
+    if (!token || !influencerId) {
+      setHasInfluencerId(false);
       setCheckingAuth(false);
 
       const returnUrl = `${window.location.pathname}${window.location.search}`;
 
-      router.replace(`/brand/login?returnUrl=${encodeURIComponent(returnUrl)}`);
+      router.replace(
+        `/influencer/login?returnUrl=${encodeURIComponent(returnUrl)}`
+      );
+
       return;
     }
 
-    setHasBrandId(true);
+    setHasInfluencerId(true);
     setCheckingAuth(false);
   }, [router, pathname, isPublicNoScaffoldRoute]);
 
@@ -78,7 +89,7 @@ export default function BrandAppLayout({
     );
   }
 
-  if (!hasBrandId) {
+  if (!hasInfluencerId) {
     return null;
   }
 
@@ -88,7 +99,7 @@ export default function BrandAppLayout({
 
   return (
     <div className="h-dvh overflow-hidden">
-      <BrandScaffold>{children}</BrandScaffold>
+      <InfluencerScaffold>{children}</InfluencerScaffold>
     </div>
   );
 }

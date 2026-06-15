@@ -80,7 +80,7 @@ function setRedirectToast(payload: RedirectToastPayload) {
   try {
     sessionStorage.setItem(
       REDIRECT_TOAST_KEY,
-      JSON.stringify({ ...payload, _ts: Date.now() })
+      JSON.stringify({ ...payload, _ts: Date.now() }),
     );
   } catch {
     // ignore
@@ -127,8 +127,8 @@ function getBackendInfluencerId(resp: any): string {
     resp?.influencerId,
   ];
 
-  const match = candidates.find((value) =>
-    value !== undefined && value !== null && String(value).trim()
+  const match = candidates.find(
+    (value) => value !== undefined && value !== null && String(value).trim(),
   );
 
   return match ? String(match).trim() : "";
@@ -147,7 +147,9 @@ function getBackendRoute(resp: any): string | undefined {
 }
 
 function stripAt(value: string) {
-  return String(value || "").trim().replace(/^@+/, "");
+  return String(value || "")
+    .trim()
+    .replace(/^@+/, "");
 }
 
 function withAt(value: string) {
@@ -156,13 +158,13 @@ function withAt(value: string) {
 }
 
 function isValidStepParam(
-  value: string | null | undefined
+  value: string | null | undefined,
 ): value is OnboardingStepParam {
   return value === "page1" || value === "page2" || value === "page3";
 }
 
 function getStepIndexFromParam(
-  value: string | null | undefined
+  value: string | null | undefined,
 ): number | null {
   if (value === "page1") return 0;
   if (value === "page2") return 1;
@@ -212,10 +214,12 @@ function normalizeResolvedProfile(raw: any, typedHandle: string) {
   const profile = getResolvedSource(raw);
 
   const username = String(
-    profile?.username || stripAt(profile?.handle || typedHandle)
+    profile?.username || stripAt(profile?.handle || typedHandle),
   ).trim();
 
-  const handle = String(profile?.handle || withAt(username || typedHandle)).trim();
+  const handle = String(
+    profile?.handle || withAt(username || typedHandle),
+  ).trim();
 
   return {
     username: stripAt(username),
@@ -249,7 +253,7 @@ function getResolveProfileUserMessage(error: any, platform: string) {
     error?.response?.data?.message ||
       error?.response?.data?.error ||
       error?.message ||
-      ""
+      "",
   ).trim();
 
   const lower = rawMessage.toLowerCase();
@@ -290,7 +294,7 @@ function getResolveProfileUserMessage(error: any, platform: string) {
 
 function getPlatformPreview(
   platformKey: string,
-  status?: PlatformState
+  status?: PlatformState,
 ): PlatformPreview | null {
   if (!status?.resolved) return null;
 
@@ -301,7 +305,7 @@ function getPlatformPreview(
       profile?.username ||
       profile?.handle ||
       status?.handle ||
-      ""
+      "",
   );
 
   const handle = withAt(profile?.handle || status?.handle || username);
@@ -313,7 +317,7 @@ function getPlatformPreview(
       profile?.fullname ||
       profile?.displayName ||
       profile?.name ||
-      username
+      username,
   ).trim();
 
   const imageUrl =
@@ -340,11 +344,14 @@ function getPlatformPreview(
   };
 }
 
-function isResolvedForCurrentHandle(status: PlatformState | undefined, handle: string) {
+function isResolvedForCurrentHandle(
+  status: PlatformState | undefined,
+  handle: string,
+) {
   return Boolean(
     status?.resolved &&
       stripAt(status?.handle || "") === stripAt(handle || "") &&
-      !status?.loading
+      !status?.loading,
   );
 }
 
@@ -508,12 +515,12 @@ function PlatformRow({
 
   return (
     <div className="w-full flex flex-col items-center">
-      <div className="flex items-center gap-3 w-full max-w-[520px] justify-center">
+      <div className="flex w-full max-w-[520px] items-center justify-center gap-2 sm:gap-3">
         {showRadios ? (
           <div
             className={cn(
               "shrink-0",
-              !selected ? "opacity-50 cursor-not-allowed" : "cursor-pointer"
+              !selected ? "opacity-50 cursor-not-allowed" : "cursor-pointer",
             )}
             onClick={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
@@ -534,11 +541,11 @@ function PlatformRow({
             <label
               htmlFor={radioId}
               className={cn(
-                "h-6 w-6 rounded-full flex items-center justify-center",
+                "h-5 w-5 sm:h-6 sm:w-6 rounded-full flex items-center justify-center",
                 selected ? "cursor-pointer" : "cursor-not-allowed",
                 selected
                   ? "bg-neutral-900"
-                  : "bg-white border border-neutral-300"
+                  : "bg-white border border-neutral-300",
               )}
               aria-label="Set as primary"
               title={selected ? "Set as primary" : "Select the platform first"}
@@ -546,8 +553,8 @@ function PlatformRow({
               {selected ? (
                 <span
                   className={cn(
-                    "h-3 w-3 rounded-full",
-                    primary ? "bg-[#FFBF00]" : "bg-white"
+                    "h-2.5 w-2.5 sm:h-3 sm:w-3 rounded-full",
+                    primary ? "bg-[#FFBF00]" : "bg-white",
                   )}
                 />
               ) : null}
@@ -566,33 +573,39 @@ function PlatformRow({
             }
           }}
           className={cn(
-            "w-[480px] h-[68px] max-w-full",
+            "min-h-[60px] w-full sm:min-h-[68px]",
             "rounded-[12px] border bg-white",
-            "px-4 flex items-center gap-3 justify-between",
+            "px-3 py-3 sm:px-4",
+            "flex items-center gap-3 justify-between",
             "border-neutral-200 hover:bg-neutral-50 active:bg-neutral-100",
             "cursor-pointer select-none",
-            "outline-none focus:outline-none"
+            "outline-none focus:outline-none",
           )}
         >
-          <div className="flex items-center gap-3 flex-1">
-            <Icon size={20} weight="regular" className="text-neutral-900" />
-            <span className="text-[14px] font-medium text-neutral-900">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <Icon
+              size={20}
+              weight="regular"
+              className="shrink-0 text-neutral-900"
+            />
+
+            <span className="min-w-0 text-[13px] font-medium text-neutral-900 sm:text-[14px]">
               {label}
             </span>
           </div>
 
           {selected ? (
             primary ? (
-              <span className="px-4 py-2 rounded-[10px] bg-neutral-900 text-white text-[12px] font-semibold">
+              <span className="shrink-0 rounded-[10px] bg-neutral-900 px-3 py-2 text-[11px] font-semibold text-white sm:px-4 sm:text-[12px]">
                 Selected
               </span>
             ) : (
-              <span className="text-[12px] font-semibold text-neutral-700">
+              <span className="shrink-0 text-[11px] font-semibold text-neutral-700 sm:text-[12px]">
                 Selected
               </span>
             )
           ) : (
-            <span className="text-[12px] font-semibold text-neutral-700">
+            <span className="shrink-0 text-[11px] font-semibold text-neutral-700 sm:text-[12px]">
               Continue
             </span>
           )}
@@ -603,8 +616,8 @@ function PlatformRow({
         <div
           className={cn(
             "mt-2 w-full max-w-[520px]",
-            showRadios ? "pl-[42px]" : "pl-0",
-            "text-[12px] text-neutral-400 flex items-center gap-2"
+            showRadios ? "pl-[32px] sm:pl-[42px]" : "pl-0",
+            "text-[12px] text-neutral-400 flex items-center gap-2",
           )}
         >
           <span className="inline-block h-[14px] w-[14px] rounded-full border border-neutral-300 text-center leading-[14px]">
@@ -616,11 +629,11 @@ function PlatformRow({
 
       {selected ? (
         <div className="mt-3 w-full max-w-[520px]">
-          <label className="block text-[12px] font-medium text-neutral-600 mb-2">
+          <label className="mb-2 block text-[12px] font-medium text-neutral-600">
             {inputLabel}
           </label>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <input
               value={handleValue}
               onChange={(e) => onHandleChange(e.target.value)}
@@ -632,31 +645,29 @@ function PlatformRow({
               }}
               placeholder={placeholder}
               className={cn(
-                "h-[46px] flex-1 rounded-[12px] border bg-white px-3",
+                "h-[46px] min-w-0 flex-1 rounded-[12px] border bg-white px-3",
                 "text-[14px] text-neutral-900",
                 "outline-none focus:outline-none",
-                status?.error ? "border-red-300" : "border-neutral-200"
+                status?.error ? "border-red-300" : "border-neutral-200",
               )}
             />
 
             <button
               type="button"
               onClick={onResolveHandle}
-              disabled={
-                !hasTypedHandle || status?.loading || isResolvedForHandle
-              }
+              disabled={!hasTypedHandle || status?.loading || isResolvedForHandle}
               className={cn(
-                "h-[46px] shrink-0 rounded-[12px] px-4 text-[13px] font-semibold transition",
+                "h-[46px] w-full shrink-0 rounded-[12px] px-4 text-[13px] font-semibold transition sm:w-auto",
                 !hasTypedHandle || status?.loading || isResolvedForHandle
                   ? "cursor-not-allowed bg-neutral-200 text-neutral-400"
-                  : "bg-neutral-900 text-white hover:bg-neutral-800"
+                  : "bg-neutral-900 text-white hover:bg-neutral-800",
               )}
             >
               {status?.loading
                 ? "Verifying..."
                 : isResolvedForHandle
-                ? "Verified"
-                : "Verify"}
+                  ? "Verified"
+                  : "Verify"}
             </button>
           </div>
 
@@ -693,10 +704,10 @@ function PlatformRow({
                   <img
                     src={preview.imageUrl}
                     alt={preview.displayName || preview.handle}
-                    className="h-12 w-12 rounded-full object-cover border border-neutral-200 bg-white"
+                    className="h-12 w-12 rounded-full border border-neutral-200 bg-white object-cover"
                   />
                 ) : (
-                  <div className="h-12 w-12 rounded-full border border-neutral-200 bg-white flex items-center justify-center text-[16px] font-semibold text-neutral-700">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full border border-neutral-200 bg-white text-[16px] font-semibold text-neutral-700">
                     {(preview.displayName || preview.username || platformKey)
                       .charAt(0)
                       .toUpperCase()}
@@ -775,13 +786,13 @@ export default function InfluencerOnboardingPage() {
 
       window.location.replace(FINAL_INFLUENCER_DASHBOARD_ROUTE);
     },
-    [getToken]
+    [getToken],
   );
 
   const [onboardStep, setOnboardStep] = React.useState(0);
   const [isLoading, setIsLoading] = React.useState(false);
   const [formError, setFormError] = React.useState<string | undefined>(
-    undefined
+    undefined,
   );
 
   const [data, setData] = React.useState<InfluencerOnboardingData>({
@@ -817,14 +828,18 @@ export default function InfluencerOnboardingPage() {
       setPlatformStates((prev) => {
         const next =
           typeof updater === "function"
-            ? (updater as (prevState: Record<string, PlatformState>) => Record<string, PlatformState>)(prev)
+            ? (
+                updater as (
+                  prevState: Record<string, PlatformState>,
+                ) => Record<string, PlatformState>
+              )(prev)
             : updater;
 
         platformStatesRef.current = next;
         return next;
       });
     },
-    []
+    [],
   );
 
   const setStepWithRoute = React.useCallback(
@@ -840,11 +855,12 @@ export default function InfluencerOnboardingPage() {
         router.replace(`/influencer/onboarding?step=${nextStepParam}`);
       }
     },
-    [router, searchParams]
+    [router, searchParams],
   );
 
   React.useEffect(() => {
     const token = getToken();
+
     if (!token) {
       router.replace("/influencer/signup");
       return;
@@ -884,11 +900,7 @@ export default function InfluencerOnboardingPage() {
       return data.selectedPlatforms.every((platform) => {
         const state = platformStates[platform];
 
-        return Boolean(
-          state &&
-            stripAt(state.handle) &&
-            !state.loading
-        );
+        return Boolean(state && stripAt(state.handle) && !state.loading);
       });
     }
 
@@ -1002,7 +1014,7 @@ export default function InfluencerOnboardingPage() {
             platform,
             handle: cleanHandle,
           },
-          token
+          token,
         );
 
         if (resolveSeqRef.current[platform] !== seq) return false;
@@ -1044,7 +1056,7 @@ export default function InfluencerOnboardingPage() {
         return false;
       }
     },
-    [getToken, updatePlatformStates]
+    [getToken, updatePlatformStates],
   );
 
   const resolveSelectedPlatformsBeforeContinue = React.useCallback(async () => {
@@ -1087,7 +1099,9 @@ export default function InfluencerOnboardingPage() {
     }
 
     if (!allResolved) {
-      setFormError("Please fix the profile verification errors before continuing.");
+      setFormError(
+        "Please fix the profile verification errors before continuing.",
+      );
     }
 
     return allResolved;
@@ -1140,7 +1154,7 @@ export default function InfluencerOnboardingPage() {
           page1,
           preferredPlatform: data.primaryPlatform,
         },
-        token
+        token,
       );
     }
 
@@ -1261,7 +1275,7 @@ export default function InfluencerOnboardingPage() {
           title: "Success",
           text: msg,
         },
-        resp
+        resp,
       );
 
       return;
@@ -1314,7 +1328,7 @@ export default function InfluencerOnboardingPage() {
           title: "Done",
           text: msg,
         },
-        resp
+        resp,
       );
 
       return;
@@ -1331,27 +1345,27 @@ export default function InfluencerOnboardingPage() {
     onboardStep === 0
       ? "Choose your platforms"
       : onboardStep === 1
-      ? "How do you like to work?"
-      : "Your collaboration preferences";
+        ? "How do you like to work?"
+        : "Your collaboration preferences";
 
   const subtitle =
     onboardStep === 0
       ? "Select platforms, enter handles, and continue. We’ll verify each handle before moving ahead."
       : onboardStep === 1
-      ? "Tell us what you create and how you prefer to get paid."
-      : "Pick your industries, project types, and delivery preferences.";
+        ? "Tell us what you create and how you prefer to get paid."
+        : "Pick your industries, project types, and delivery preferences.";
 
   return (
     <div className="min-h-[100svh] bg-background text-foreground flex flex-col overflow-x-hidden">
       <ToastStyles />
 
-      <header className="w-full bg-white border-y border-[color:var(--Border-Primary,#B3B3B3)]">
+      <header className="w-full shrink-0 bg-white border-b border-[color:var(--Border-Primary,#B3B3B3)]">
         <div
           className={cn(
             "mx-auto flex flex-wrap items-center justify-between content-center",
-            "gap-m py-[16px]",
-            "px-[20px] md:px-[48px] xl:px-[120px] 2xl:px-[160px]",
-            "max-w-full"
+            "gap-m py-[14px] sm:py-[16px]",
+            "px-[16px] sm:px-[20px] md:px-[48px] xl:px-[120px] 2xl:px-[160px]",
+            "max-w-full",
           )}
         >
           <Link href="/" className="flex items-center gap-s">
@@ -1377,7 +1391,7 @@ export default function InfluencerOnboardingPage() {
             href="/brand/signup"
             className={cn(
               buttonVariants({ variant: "outline", size: "sm" }),
-              "!my-0 rounded-m px-l border-[color:var(--Border-Primary,#B3B3B3)] text-neutral-600"
+              "!my-0 rounded-m px-l border-[color:var(--Border-Primary,#B3B3B3)] text-neutral-600",
             )}
           >
             Join as a Brand
@@ -1385,11 +1399,11 @@ export default function InfluencerOnboardingPage() {
         </div>
       </header>
 
-      <main className="flex-1 py-[24px]">
-        <section className="flex px-[20px] justify-center w-full items-start pt-[84px]">
+      <main className="flex-1 min-h-0 overflow-y-auto">
+        <section className="flex w-full justify-center px-[16px] py-[24px] sm:px-[20px] sm:py-[32px] lg:py-[40px]">
           <div className="w-full max-w-[720px]">
-            <div className="px-6 pt-4">
-              <div className="h-[3px] w-full rounded-full bg-neutral-100 overflow-hidden">
+            <div className="px-0 sm:px-6">
+              <div className="h-[3px] w-full overflow-hidden rounded-full bg-neutral-100">
                 <div
                   className="h-full bg-[#28A745] transition-all duration-300"
                   style={{ width: `${progressPct}%` }}
@@ -1398,12 +1412,12 @@ export default function InfluencerOnboardingPage() {
             </div>
 
             <div className="flex flex-col">
-              <div className="px-6 pt-5">
+              <div className="pt-5 sm:px-6">
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
                     onClick={onboardPrev}
-                    className="inline-flex items-center justify-center rounded-full p-2 hover:bg-neutral-100 active:bg-neutral-200"
+                    className="inline-flex items-center justify-center rounded-full p-2 hover:bg-neutral-100 active:bg-neutral-200 disabled:cursor-not-allowed disabled:opacity-40"
                     aria-label="Back"
                     disabled={onboardStep === 0}
                   >
@@ -1422,16 +1436,21 @@ export default function InfluencerOnboardingPage() {
                   </div>
                 </div>
 
-                <div className="mt-6">
+                <div className="mt-[20px] sm:mt-6">
                   <h1 className="cg-heading">{title}</h1>
-                  <p className="mt-l cg-description">{subtitle}</p>
+                  <p className="mt-[12px] cg-description sm:mt-l">
+                    {subtitle}
+                  </p>
                 </div>
 
-                <div className="px-[20px] mt-[44px] pb-10">
+                <div className="mt-[28px] pb-[24px] sm:mt-[36px] sm:px-[20px] sm:pb-10 lg:mt-[44px]">
                   {onboardStep === 0 && (
-                    <div className="flex flex-col gap-4 items-center">
+                    <div className="flex flex-col items-center gap-4">
                       {PLATFORM_LIST.map((p) => {
-                        const selected = includes(data.selectedPlatforms, p.key);
+                        const selected = includes(
+                          data.selectedPlatforms,
+                          p.key,
+                        );
                         const primary = data.primaryPlatform === p.key;
                         const state = platformStates[p.key];
 
@@ -1450,7 +1469,9 @@ export default function InfluencerOnboardingPage() {
                             status={state}
                             onToggle={() => togglePlatform(p.key)}
                             onMakePrimary={() => makePrimary(p.key)}
-                            onHandleChange={(value) => onHandleChange(p.key, value)}
+                            onHandleChange={(value) =>
+                              onHandleChange(p.key, value)
+                            }
                             onResolveHandle={() => onVerifyHandle(p.key)}
                           />
                         );
@@ -1560,7 +1581,7 @@ export default function InfluencerOnboardingPage() {
                             className={cn(
                               "h-[44px] w-full rounded-[12px] border border-neutral-200 bg-white px-3",
                               "text-[14px] text-neutral-900",
-                              "outline-none focus:outline-none"
+                              "outline-none focus:outline-none",
                             )}
                           />
 
@@ -1618,7 +1639,7 @@ export default function InfluencerOnboardingPage() {
                 </div>
               </div>
 
-              <div className="sticky bottom-0 shrink-0 bg-white px-6 pt-6 pb-10">
+              <div className="sticky bottom-0 z-10 shrink-0 border-t border-neutral-100 bg-background/95 px-0 pt-4 pb-6 backdrop-blur sm:px-6">
                 {formError ? (
                   <p className="mb-3 text-[12px] leading-[16px] text-error-500">
                     {formError}
@@ -1629,8 +1650,8 @@ export default function InfluencerOnboardingPage() {
                   variant="solid"
                   size="lg"
                   className={cn(
-                    "w-full h-[58px] rounded-[14px]",
-                    "disabled:opacity-100 disabled:bg-neutral-200 disabled:text-neutral-400"
+                    "w-full h-[56px] rounded-[14px] sm:h-[58px]",
+                    "disabled:opacity-100 disabled:bg-neutral-200 disabled:text-neutral-400",
                   )}
                   onClick={onboardNext}
                   disabled={!currentIsValid || isLoading || page1Resolving}
@@ -1640,14 +1661,14 @@ export default function InfluencerOnboardingPage() {
                       ? "Verifying..."
                       : "Saving..."
                     : onboardStep === 0 && page1Resolving
-                    ? "Verifying handle..."
-                    : "Continue"}
+                      ? "Verifying handle..."
+                      : "Continue"}
                 </Button>
 
                 {onboardStep !== 0 ? (
                   <button
                     type="button"
-                    className="w-full text-center mt-[16px] text-[14px] text-neutral-400 hover:text-neutral-600"
+                    className="mt-[16px] w-full text-center text-[14px] text-neutral-400 hover:text-neutral-600"
                     onClick={onboardSkip}
                     disabled={isLoading}
                   >

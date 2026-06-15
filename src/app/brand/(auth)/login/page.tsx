@@ -272,7 +272,7 @@ function routeToBrandPath(route?: OnboardingRoute) {
     case "homepage":
     case "campaign":
     default:
-      return "/brand/dashboard";
+      return "/brand/create-campaign?byAi=1";
   }
 }
 

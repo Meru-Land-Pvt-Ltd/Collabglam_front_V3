@@ -42,8 +42,8 @@ const DEFAULT_ITEMS: Testimonial[] = [
   {
     id: "t1",
     company: "SIHOO",
-    name: "Rishabh Jain",
-    role: "(Marketing Manager)",
+    name: "Daisy",
+    role: "(Area Sales Manager)",
     quote:
       "“What stood out most was the quality of creators and the ease of collaboration. Our team saved countless hours on outreach and campaign coordination.”",
     avatarSrc:
@@ -53,8 +53,8 @@ const DEFAULT_ITEMS: Testimonial[] = [
   {
     id: "t2",
     company: "Jackery",
-    name: "Ayesha Khan",
-    role: "(Brand Lead)",
+    name: "Gabriela",
+    role: "(Marketing Manager)",
     quote:
       "“A reliable platform for brands looking to build authentic creator partnerships. The workflow is smooth, transparent, and results-driven.”",
     avatarSrc:
@@ -64,8 +64,8 @@ const DEFAULT_ITEMS: Testimonial[] = [
   {
     id: "t3",
     company: "DREAME",
-    name: "Arjun Mehta",
-    role: "(Growth Manager)",
+    name: "Kim",
+    role: "(Senior Marketing Manager)",
     quote:
       "“The creator search filters are incredibly useful. It takes minutes instead of hours to find relevant influencers.”",
     avatarSrc:
@@ -74,9 +74,9 @@ const DEFAULT_ITEMS: Testimonial[] = [
   },
   {
     id: "t4",
-    company: "Ancker",
-    name: "Neha Sharma",
-    role: "(Founder)",
+    company: "Anker",
+    name: "Laura",
+    role: "(Brand Marketing Manager)",
     quote:
       "“The quality of creators on CollabGlam has been impressive. We've built some great long-term partnerships through the platform.”",
     avatarSrc:
@@ -85,9 +85,9 @@ const DEFAULT_ITEMS: Testimonial[] = [
   },
   {
     id: "t5",
-    company: "VtoMAN",
-    name: "Kabir Verma",
-    role: "(Partnerships Manager)",
+    company: "VTOMAN",
+    name: "Okan",
+    role: "(Business collaboration)",
     quote:
       "“One of the easiest platforms we've used for collaborations.”",
     avatarSrc:

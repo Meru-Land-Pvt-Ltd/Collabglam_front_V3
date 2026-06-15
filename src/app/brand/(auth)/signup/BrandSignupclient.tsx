@@ -138,8 +138,13 @@ const SVG_LIBRARY = [SvgTriangle, SvgArcs, SvgChain, SvgClover];
 
 function pickDifferent(current: number, max: number) {
   if (max <= 1) return current;
+
   let next = current;
-  while (next === current) next = Math.floor(Math.random() * max);
+
+  while (next === current) {
+    next = Math.floor(Math.random() * max);
+  }
+
   return next;
 }
 
@@ -154,6 +159,7 @@ function useRandomSvgSwap(intervalMs: number, optionsCount: number) {
     const id = window.setInterval(() => {
       setIndex((prev) => pickDifferent(prev, optionsCount));
     }, intervalMs);
+
     return () => window.clearInterval(id);
   }, [intervalMs, optionsCount]);
 
@@ -208,7 +214,7 @@ async function runRecaptchaCheck(
 
 function RecaptchaDisclosure() {
   return (
-    <p className="mt-3 text-center text-xs leading-5 text-[#969696] [@media(max-height:820px)]:mt-2 [@media(max-height:820px)]:text-[10px] [@media(max-height:820px)]:leading-[14px]">
+    <p className="mt-3 text-center text-xs leading-5 text-[#969696]">
       This site is protected by reCAPTCHA and the Google{" "}
       <a
         href="https://policies.google.com/privacy"
@@ -407,9 +413,11 @@ function BrandSignupInner() {
     if (hasAnyErrorNow) return;
 
     setIsSendingOtp(true);
+
     try {
       await runRecaptchaCheck(executeRecaptcha, "brand_signup_send_otp");
       await sendOtp();
+
       setStep("otp");
       setOtp("");
       setOtpError(undefined);
@@ -437,6 +445,7 @@ function BrandSignupInner() {
     }
 
     setIsVerifyingOtp(true);
+
     try {
       await runRecaptchaCheck(executeRecaptcha, "brand_signup_verify_otp");
       await verifyOtp(otp);
@@ -450,7 +459,12 @@ function BrandSignupInner() {
       router.replace("/brand/onboarding");
     } catch (err) {
       const msg = getApiErrorMessage(err, "OTP verification failed");
-      toast({ icon: "error", title: "OTP verification failed", text: msg });
+
+      toast({
+        icon: "error",
+        title: "OTP verification failed",
+        text: msg,
+      });
     } finally {
       setIsVerifyingOtp(false);
     }
@@ -461,11 +475,12 @@ function BrandSignupInner() {
 
     setOtp("");
     setOtpError(undefined);
-
     setIsSendingOtp(true);
+
     try {
       await runRecaptchaCheck(executeRecaptcha, "brand_signup_resend_otp");
       await sendOtp();
+
       toast({
         icon: "success",
         title: "OTP resent",
@@ -490,14 +505,14 @@ function BrandSignupInner() {
   };
 
   return (
-    <div className="min-h-[100svh] lg:h-[100svh] bg-background text-foreground flex flex-col overflow-x-hidden lg:overflow-hidden relative">
+    <div className="min-h-[100svh] bg-background text-foreground flex flex-col overflow-x-hidden relative">
       <ToastStyles />
 
-      <header className="w-full bg-white border-b border-bd-primary">
+      <header className="w-full shrink-0 bg-white border-b border-bd-primary">
         <div
           className={cn(
             "mx-auto flex flex-wrap items-center justify-between content-center",
-            "gap-m py-[16px] [@media(max-height:820px)]:py-[10px]",
+            "gap-m py-[16px]",
             "px-[20px] md:px-[48px] xl:px-[120px] 2xl:px-[160px]",
             "max-w-full",
           )}
@@ -508,7 +523,7 @@ function BrandSignupInner() {
               alt="CollabGlam Logo"
               width={40}
               height={40}
-              className="object-contain size-[40px] [@media(max-height:820px)]:size-[34px]"
+              className="object-contain size-[40px]"
               loading="eager"
             />
 
@@ -534,21 +549,21 @@ function BrandSignupInner() {
         </div>
       </header>
 
-      <main
-        className={cn("max-w-full flex-1 min-h-0 overflow-y-auto lg:overflow-hidden", "pt-[10px] [@media(max-height:820px)]:pt-0")}
-      >
+      <main className="max-w-full flex-1 min-h-0 overflow-y-auto py-[16px] lg:py-[14px]">
         <div
-          className={cn("grid min-h-0", "h-full items-stretch lg:grid-cols-2")}
+          className={cn(
+            "flex w-full min-h-0 flex-col gap-[24px]",
+            "lg:flex-row lg:items-stretch lg:gap-0",
+          )}
         >
-          <section className="order-1 lg:h-full lg:min-h-0">
-            <div className="flex w-full lg:h-full lg:min-h-0 lg:items-stretch pr-[20px]">
+          <section className="order-1 w-full lg:w-1/2 lg:flex-none">
+            <div className="flex w-full lg:sticky lg:top-[14px] lg:h-[calc(100svh-92px)] lg:items-stretch lg:pr-[20px]">
               <div
-                className="
-                  relative w-full overflow-hidden
-                  rounded-tr-[32px] rounded-br-[32px]
-                  h-[360px] sm:h-[460px] md:h-[560px]
-                  lg:h-full
-                "
+                className={cn(
+                  "relative w-full overflow-hidden",
+                  "rounded-tr-[32px] rounded-br-[32px]",
+                  "h-[360px] sm:h-[460px] md:h-[560px] lg:h-full",
+                )}
                 style={{
                   background:
                     "var(--Gradient-Brand-Primary-Radial, radial-gradient(100% 100% at 50% 0%, #FF8C01 0%, #FFBF00 37.94%, #FFF 90.87%))",
@@ -569,22 +584,23 @@ function BrandSignupInner() {
 
           <section
             className={cn(
-              "order-2 flex px-[20px] justify-center w-full items-start",
-              step === "form" || step === "otp" ? "py-[32px] lg:py-[18px] [@media(max-height:820px)]:py-[10px]" : "",
-              "lg:h-full lg:min-h-0 lg:items-center",
+              "order-2 flex w-full justify-center px-[20px]",
+              "items-start",
+              "lg:w-1/2 lg:flex-none lg:px-[20px]",
             )}
           >
-            <div className={cn("w-full max-w-[520px] [@media(max-height:820px)]:max-w-[500px]")}>
+            <div className={cn("w-full max-w-[520px] pb-[24px]")}>
               {step === "form" && (
                 <>
-                  <h1 className="cg-heading [@media(max-height:820px)]:text-[32px] [@media(max-height:820px)]:leading-[38px]">Create an Account</h1>
-                  <p className="mt-m cg-description [@media(max-height:820px)]:mt-s [@media(max-height:820px)]:text-[14px] [@media(max-height:820px)]:leading-[20px]">
+                  <h1 className="cg-heading">Create an Account</h1>
+
+                  <p className="mt-m cg-description">
                     Share a few basic details so we can set up your workspace.
                   </p>
 
                   <form
                     onSubmit={handleContinueFromForm}
-                    className="mt-2xl space-y-m [@media(max-height:820px)]:mt-l [@media(max-height:820px)]:space-y-s"
+                    className="mt-[18px] space-y-[14px] lg:mt-[16px] lg:space-y-[12px]"
                   >
                     <FloatingInput
                       label="Brand Name"
@@ -626,7 +642,7 @@ function BrandSignupInner() {
                       errorText={emailError || undefined}
                     />
 
-                    <div className="grid grid-cols-1 gap-m md:grid-cols-2 [@media(max-height:820px)]:gap-s">
+                    <div className="grid grid-cols-1 gap-[14px] md:grid-cols-2">
                       <FloatingSelect
                         label="Company Size"
                         size="small"
@@ -682,7 +698,7 @@ function BrandSignupInner() {
                       showRules
                     />
 
-                    <div className="mt-xl [@media(max-height:820px)]:mt-m">
+                    <div className="mt-[14px]">
                       <label
                         className={cn(
                           "flex items-center gap-[10px] text-center text-[12px] leading-[16px]",
@@ -733,7 +749,7 @@ function BrandSignupInner() {
                       variant="solid"
                       size="lg"
                       className={cn(
-                        "w-full rounded-m mt-2xl [@media(max-height:820px)]:mt-l [@media(max-height:820px)]:h-[48px]",
+                        "w-full rounded-m mt-[18px]",
                         isSendingOtp && "opacity-60",
                       )}
                       disabled={isSendingOtp}
@@ -741,7 +757,7 @@ function BrandSignupInner() {
                       {isSendingOtp ? "Sending OTP..." : "Continue"}
                     </Button>
 
-                    <p className="cg-auth-helper [@media(max-height:820px)]:mt-2 [@media(max-height:820px)]:text-[13px]">
+                    <p className="cg-auth-helper mt-[14px]">
                       Already Have an Account?{" "}
                       <Link
                         href="/brand/login"
@@ -768,18 +784,21 @@ function BrandSignupInner() {
                       <CaretLeft
                         size={18}
                         weight="bold"
-                        style={{ color: "var(--Light-Icon-Primary, #1A1A1A)" }}
+                        style={{
+                          color: "var(--Light-Icon-Primary, #1A1A1A)",
+                        }}
                       />
                     </button>
 
-                    <h1 className="cg-heading m-0 [@media(max-height:820px)]:text-[32px] [@media(max-height:820px)]:leading-[38px]">Enter OTP</h1>
+                    <h1 className="cg-heading m-0">Enter OTP</h1>
                   </div>
-                  <p className="mt-s cg-description [@media(max-height:820px)]:text-[14px] [@media(max-height:820px)]:leading-[20px]">
+
+                  <p className="mt-s cg-description">
                     Enter the 6-digit code sent to your email to activate your
                     account.
                   </p>
 
-                  <div className="space-y-[14px] mt-[12px] [@media(max-height:820px)]:space-y-[10px]">
+                  <div className="space-y-[14px] mt-[12px]">
                     <div className="flex justify-center">
                       <InputOTP
                         maxLength={6}
@@ -806,11 +825,17 @@ function BrandSignupInner() {
                       </InputOTP>
                     </div>
 
-                    <div className="space-y-[20px] [@media(max-height:820px)]:space-y-[12px]">
+                    {otpError ? (
+                      <p className="mt-0 text-center text-[12px] leading-[16px] text-[color:var(--Errors-500,#E35141)]">
+                        {otpError}
+                      </p>
+                    ) : null}
+
+                    <div className="space-y-[20px]">
                       <Button
                         variant="solid"
                         className={cn(
-                          "w-full h-[72px] rounded-[12px] [@media(max-height:820px)]:h-[52px]",
+                          "w-full h-[72px] rounded-[12px]",
                           (isVerifyingOtp || isSendingOtp) && "opacity-60",
                         )}
                         onClick={handleVerifyOtp}
@@ -822,12 +847,13 @@ function BrandSignupInner() {
                       <div
                         className={cn(
                           SUBTITLE_CLASS,
-                          " mt-[12px] flex items-center justify-center gap-1 [@media(max-height:820px)]:mt-[8px]",
+                          "mt-[12px] flex items-center justify-center gap-1",
                         )}
                       >
                         <span className="leading-[20px]">
                           Didn&apos;t Received an OTP?
                         </span>
+
                         <button
                           type="button"
                           onClick={handleResendOtp}

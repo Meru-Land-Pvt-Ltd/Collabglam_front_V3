@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { addDays, format } from "date-fns";
@@ -36,6 +36,7 @@ import SkeletonLoader, {
 } from "@/components/common/SkeletonLoader";
 
 import PlatformReviewPrompt from "@/components/common/PlatformReviewPrompt";
+import { CalendarCard } from "@/components/ui/calendar-card";
 
 /* ---------------- types ---------------- */
 
@@ -53,6 +54,7 @@ type ActiveInfluencerRow = {
   lastActionAt?: string | null;
   assignedAt?: string | null;
 };
+type DashboardDateFilter = "date" | "all";
 
 type CampaignRow = {
   id: string;
@@ -456,6 +458,32 @@ const isCampaignActive = (campaign: CampaignRow) => {
   return Number(campaign.isActive || 0) === 1 || status.includes("active");
 };
 
+const getStartOfDayMs = (date: Date) => {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+};
+
+const getEndOfDayMs = (date: Date) => {
+  const d = new Date(date);
+  d.setHours(23, 59, 59, 999);
+  return d.getTime();
+};
+
+const isCampaignOnSelectedDate = (campaign: CampaignRow, selectedDate: Date) => {
+  const selectedStart = getStartOfDayMs(selectedDate);
+  const selectedEnd = getEndOfDayMs(selectedDate);
+
+  const start = campaign.startAt ? getStartOfDayMs(new Date(campaign.startAt)) : null;
+  const end = campaign.endAt ? getEndOfDayMs(new Date(campaign.endAt)) : null;
+
+  if (!start && !end) return true;
+  if (start && !end) return selectedEnd >= start;
+  if (!start && end) return selectedStart <= end;
+
+  return selectedEnd >= Number(start) && selectedStart <= Number(end);
+};
+
 /* ---------------- page ---------------- */
 
 const DashboardPageSkeleton = () => {
@@ -549,9 +577,21 @@ export default function BrandDashboardHome() {
   const [applicantDecisionLoading, setApplicantDecisionLoading] = useState<Record<string, boolean>>({});
 
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [dateFilterMode, setDateFilterMode] = useState<DashboardDateFilter>("date");
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
 
-  const todayLabel = format(new Date(), "EEE, dd MMM yyyy");
-  const selectedDateLabel = format(selectedDate, "EEE, MMM d, yyyy").toLowerCase();
+  const calendarPopoverRef = useRef<HTMLDivElement | null>(null);
+
+  const todayDate = new Date();
+  const todayLabel = format(todayDate, "EEE, dd MMM yyyy");
+
+  const isAllTime = dateFilterMode === "all";
+  const selectedDateLabel = isAllTime
+    ? "All Time"
+    : format(selectedDate, "EEE, MMM d, yyyy").toLowerCase();
+
+  const isSelectedDateToday =
+    getStartOfDayMs(selectedDate) >= getStartOfDayMs(todayDate);
 
   const openAiCampaigns = () => {
     const brandId = typeof window !== "undefined" ? localStorage.getItem("brandId") || "" : "";
@@ -570,6 +610,46 @@ export default function BrandDashboardHome() {
 
     router.push("/brand/create-campaign?byAi=1");
   };
+
+  const handleCalendarDateChange = (date: Date) => {
+    const safeDate =
+      getStartOfDayMs(date) > getStartOfDayMs(todayDate) ? todayDate : date;
+
+    setSelectedDate(safeDate);
+    setDateFilterMode("date");
+    setIsCalendarOpen(false);
+  };
+
+  const handleDateMove = (amount: number) => {
+    const baseDate = isAllTime ? todayDate : selectedDate;
+    const nextDate = addDays(baseDate, amount);
+
+    handleCalendarDateChange(nextDate);
+  };
+
+  const handleAllTimeClick = () => {
+    setDateFilterMode("all");
+    setIsCalendarOpen(false);
+  };
+
+  useEffect(() => {
+    if (!isCalendarOpen) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        calendarPopoverRef.current &&
+        !calendarPopoverRef.current.contains(event.target as Node)
+      ) {
+        setIsCalendarOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isCalendarOpen]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -798,26 +878,50 @@ export default function BrandDashboardHome() {
   };
 
   const campaignListRows = useMemo<CampaignListRow[]>(() => {
-    return (data?.campaigns || []).map((campaign, index) => {
-      const title =
-        campaign.campaignTitle ||
-        campaign.productOrServiceName ||
-        `Campaign ${index + 1}`;
+    return (data?.campaigns || [])
+      .filter((campaign) =>
+        dateFilterMode === "all" || isCampaignOnSelectedDate(campaign, selectedDate)
+      )
+      .map((campaign, index) => {
+        const title =
+          campaign.campaignTitle ||
+          campaign.productOrServiceName ||
+          `Campaign ${index + 1}`;
 
-      return {
-        id: campaign.campaignId || campaign.campaignsId || campaign.id || `campaign-${index}`,
-        title,
-        subtitle: campaign.goal || campaign.goals?.[0] || campaign.productOrServiceName || "Campaign",
-        isActive: isCampaignActive(campaign),
-        statusLabel: isCampaignActive(campaign) ? "Active" : "Inactive",
-        progress: getTimelineProgress(campaign.startAt, campaign.endAt),
-        daysLeft: getDaysLeft(campaign.endAt),
-        activeInfluencers: Array.isArray(campaign.activeInfluencers)
-          ? campaign.activeInfluencers
-          : [],
-      };
+        return {
+          id: campaign.campaignId || campaign.campaignsId || campaign.id || `campaign-${index}`,
+          title,
+          subtitle: campaign.goal || campaign.goals?.[0] || campaign.productOrServiceName || "Campaign",
+          isActive: isCampaignActive(campaign),
+          statusLabel: isCampaignActive(campaign) ? "Active" : "Inactive",
+          progress: getTimelineProgress(campaign.startAt, campaign.endAt),
+          daysLeft: getDaysLeft(campaign.endAt),
+          activeInfluencers: Array.isArray(campaign.activeInfluencers)
+            ? campaign.activeInfluencers
+            : [],
+        };
+      });
+  }, [data?.campaigns, dateFilterMode, selectedDate]);
+
+  const workingInfluencers = useMemo<ActiveInfluencerRow[]>(() => {
+    const map = new Map<string, ActiveInfluencerRow>();
+
+    campaignListRows.forEach((campaign) => {
+      campaign.activeInfluencers.forEach((influencer, index) => {
+        const key =
+          influencer.influencerId ||
+          influencer.contractMongoId ||
+          influencer.contractId ||
+          `${influencer.name}-${index}`;
+
+        if (!map.has(key)) {
+          map.set(key, influencer);
+        }
+      });
     });
-  }, [data?.campaigns]);
+
+    return Array.from(map.values());
+  }, [campaignListRows]);
 
   const releaseMilestones = useMemo<ReleaseMilestoneRow[]>(() => {
     return brandMilestones
@@ -879,26 +983,45 @@ export default function BrandDashboardHome() {
   const usableBalanceValue = walletData?.usableBalance ?? walletBalanceValue ?? 0;
   const walletCardValue = walletView === "used" ? usableBalanceValue : walletBalanceValue;
 
+  const hasSelectedDateCampaignData =
+    dateFilterMode === "all" || campaignListRows.length > 0;
+
+  const campaignMetricValue = hasSelectedDateCampaignData
+    ? String(campaignListRows.length || 0).padStart(2, "0")
+    : "NA";
+
+  const workingInfluencerMetricValue = hasSelectedDateCampaignData
+    ? Number(workingInfluencers.length || 0).toLocaleString()
+    : "NA";
+
+  const campaignCardRightLabel =
+    dateFilterMode === "all"
+      ? "All"
+      : isSelectedDateToday
+        ? "Today"
+        : format(selectedDate, "MMM d, yyyy");
   const dashboardCards = [
     {
       title: "All Campaign",
-      value: String(totalCreatedCampaigns || 0).padStart(2, "0"),
-      subtitle: "Active Campaigns",
-      rightLabel: "Today",
+      value: campaignMetricValue,
+      subtitle: dateFilterMode === "all" ? "All-time campaigns" : "Campaigns on selected date",
+      rightLabel: campaignCardRightLabel,
       icon: <CalendarDots size={16} weight="bold" />,
+      onClick: () => router.push("/brand/campaign/all"),
     },
     {
       title: "Influencers Engaged",
-      value: Number(totalHiredInfluencers || 0).toLocaleString(),
-      subtitle: "+6 new this week",
+      value: workingInfluencerMetricValue,
+      subtitle: dateFilterMode === "all" ? "All-time working influencers" : "Working influencers",
       actionIcon: <ArrowUpRight size={16} weight="bold" />,
-      avatars: true,
+      avatarUsers: hasSelectedDateCampaignData ? workingInfluencers : [],
     },
     {
       title: "Freeze Amount",
       value: formatMoney(frozenBalanceValue),
       subtitle: "Frozen balance",
       actionIcon: <ArrowUpRight size={16} weight="bold" />,
+      onClick: () => router.push("/brand/wallet"),
     },
     {
       title: "Wallet",
@@ -908,6 +1031,7 @@ export default function BrandDashboardHome() {
         value: walletView,
         onChange: setWalletView,
       },
+      onClick: () => router.push("/brand/wallet"),
     },
   ];
 
@@ -988,10 +1112,24 @@ export default function BrandDashboardHome() {
                 Overview
               </h2>
 
-              {/* <div className="flex flex-wrap items-center gap-2 lg:ml-auto">
+              <div
+                ref={calendarPopoverRef}
+                className="relative flex flex-wrap items-center gap-2 lg:ml-auto"
+              >
                 <button
                   type="button"
-                  onClick={() => setSelectedDate((prev) => addDays(prev, -1))}
+                  onClick={handleAllTimeClick}
+                  className={`flex h-10 items-center justify-center rounded-lg border px-4 font-inter text-[0.75rem] font-medium leading-4 transition ${isAllTime
+                    ? "border-[#1A1A1A] bg-[#1A1A1A] text-white"
+                    : "border-[#E6E6E6] bg-white text-[#1A1A1A] hover:bg-[#F7F7F7]"
+                    }`}
+                >
+                  All
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleDateMove(-1)}
                   className="flex h-10 w-10 items-center justify-center rounded-lg border border-[#E6E6E6] bg-white transition hover:bg-[#F7F7F7]"
                   aria-label="Previous date"
                 >
@@ -1000,8 +1138,9 @@ export default function BrandDashboardHome() {
 
                 <button
                   type="button"
-                  onClick={() => setSelectedDate((prev) => addDays(prev, 1))}
-                  className="flex h-10 w-10 items-center justify-center rounded-lg border border-[#E6E6E6] bg-white transition hover:bg-[#F7F7F7]"
+                  onClick={() => handleDateMove(1)}
+                  disabled={!isAllTime && isSelectedDateToday}
+                  className="flex h-10 w-10 items-center justify-center rounded-lg border border-[#E6E6E6] bg-white transition hover:bg-[#F7F7F7] disabled:cursor-not-allowed disabled:opacity-40"
                   aria-label="Next date"
                 >
                   <ArrowRight size={16} weight="bold" />
@@ -1009,12 +1148,29 @@ export default function BrandDashboardHome() {
 
                 <button
                   type="button"
+                  onClick={() => {
+                    setDateFilterMode("date");
+                    setIsCalendarOpen((prev) => !prev);
+                  }}
                   className="flex h-10 w-[11.5625rem] shrink-0 items-center justify-between rounded-lg border border-[#E6E6E6] bg-white px-3 font-inter text-[0.75rem] font-medium leading-4 text-[#1A1A1A] lg:ml-2"
                 >
                   <span>{selectedDateLabel}</span>
                   <CalendarDots size={16} weight="bold" />
                 </button>
-              </div> */}
+
+                {isCalendarOpen ? (
+                  <div className="absolute right-0 top-12 z-50 w-[22.5rem] rounded-2xl bg-white shadow-xl">
+                    <CalendarCard
+                      value={selectedDate}
+                      onChange={handleCalendarDateChange}
+                      maxDate={todayDate}
+                      showYear
+                      weekStartsOn={1}
+                      className="max-w-none border-[#E6E6E6] bg-white"
+                    />
+                  </div>
+                ) : null}
+              </div>
             </div>
 
             <div className="grid w-full grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
@@ -1050,6 +1206,9 @@ export default function BrandDashboardHome() {
                 rows={appliedInfluencers}
                 onDecision={handleApplicantDecision}
                 decisionLoadingMap={applicantDecisionLoading}
+                onOpenInfluencer={(campaignId) =>
+                  router.push(`/brand/influ/applied?campaignId=${campaignId}`)
+                }
               />
 
               <CampaignListSection
@@ -1087,7 +1246,8 @@ type DashboardMetricCardProps = {
   rightLabel?: string;
   icon?: React.ReactNode;
   actionIcon?: React.ReactNode;
-  avatars?: boolean;
+  avatarUsers?: ActiveInfluencerRow[];
+  onClick?: () => void;
   tabs?: {
     value: WalletTab;
     onChange: (value: WalletTab) => void;
@@ -1101,11 +1261,30 @@ const DashboardMetricCard = ({
   rightLabel,
   icon,
   actionIcon,
-  avatars,
+  avatarUsers,
   tabs,
+  onClick,
 }: DashboardMetricCardProps) => {
+  const isClickable = Boolean(onClick);
+  const visibleAvatars = avatarUsers?.slice(0, 4) || [];
+  const extraAvatars = Math.max(0, (avatarUsers?.length || 0) - visibleAvatars.length);
+
   return (
-    <div className="flex min-h-[10.625rem] w-full min-w-0 flex-col items-start justify-between rounded-lg border border-[#E6E6E6] bg-white px-5 py-4">
+    <div
+      role={isClickable ? "button" : undefined}
+      tabIndex={isClickable ? 0 : undefined}
+      onClick={onClick}
+      onKeyDown={(e) => {
+        if (!isClickable) return;
+
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick?.();
+        }
+      }}
+      className={`flex min-h-[10.625rem] w-full min-w-0 flex-col items-start justify-between rounded-lg border border-[#E6E6E6] bg-white px-5 py-4 ${isClickable ? "cursor-pointer transition hover:bg-[#F9F9F9]" : ""
+        }`}
+    >
       <div className="flex w-full min-w-0 items-start justify-between gap-3">
         <div className="min-w-0 flex-1 truncate font-inter text-[1rem] font-medium leading-6 tracking-[0] text-[#1A1A1A]">
           {title}
@@ -1169,30 +1348,33 @@ const DashboardMetricCard = ({
           </div>
         </div>
 
-        {avatars ? (
+        {avatarUsers ? (
           <div className="flex shrink-0 items-center">
-            {["A", "B", "C", "D"].map((item, index) => (
-              <span
-                key={item}
-                className="-ml-2 first:ml-0 flex h-8 w-8 items-center justify-center rounded-full border-2 border-white text-[0.625rem] font-semibold text-[#3A3A3A]"
-                style={{
-                  background:
-                    index === 0
-                      ? "#F7D7C4"
-                      : index === 1
-                        ? "#D9C3AA"
-                        : index === 2
-                          ? "#E6B39A"
-                          : "#C7A48A",
-                }}
-              >
-                {item}
-              </span>
-            ))}
+            {visibleAvatars.map((influencer, index) => {
+              const initial = (influencer.name || "I").trim().slice(0, 1).toUpperCase();
 
-            <span className="-ml-2 flex h-8 min-w-8 items-center justify-center rounded-full border-2 border-white bg-[#F7F7F7] px-2 font-inter text-[0.625rem] font-semibold text-[#1A1A1A]">
-              10+
-            </span>
+              return influencer.profileImage ? (
+                <img
+                  key={`${influencer.influencerId || influencer.name}-${index}`}
+                  src={influencer.profileImage}
+                  alt={influencer.name || "Influencer"}
+                  className="-ml-2 first:ml-0 h-8 w-8 rounded-full border-2 border-white bg-[#F2F2F2] object-cover"
+                />
+              ) : (
+                <span
+                  key={`${influencer.influencerId || influencer.name}-${index}`}
+                  className="-ml-2 first:ml-0 flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-[#F2F2F2] font-inter text-[0.625rem] font-semibold text-[#1A1A1A]"
+                >
+                  {initial}
+                </span>
+              );
+            })}
+
+            {extraAvatars > 0 ? (
+              <span className="-ml-2 flex h-8 min-w-8 items-center justify-center rounded-full border-2 border-white bg-[#F7F7F7] px-2 font-inter text-[0.625rem] font-semibold text-[#1A1A1A]">
+                {extraAvatars}+
+              </span>
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -1204,10 +1386,12 @@ const AppliedInfluencerSection = ({
   rows,
   onDecision,
   decisionLoadingMap,
+  onOpenInfluencer,
 }: {
   rows: AppliedInfluencerRow[];
   onDecision: (row: AppliedInfluencerRow, field: ApplicantDecisionField) => void;
   decisionLoadingMap: Record<string, boolean>;
+  onOpenInfluencer: (campaignId: string) => void;
 }) => {
   return (
     <section className="flex w-full min-w-0 rounded-lg border border-[#E6E6E6] bg-white px-5 pt-4 pb-3 pr-1">
@@ -1216,13 +1400,6 @@ const AppliedInfluencerSection = ({
           <h3 className="font-inter text-[1rem] font-medium leading-6 tracking-[0] text-[#1A1A1A]">
             Applied Influencer
           </h3>
-
-          <button
-            type="button"
-            className="shrink-0 font-inter text-[0.75rem] font-medium leading-4 text-[#1A1A1A] underline underline-offset-2 pr-2"
-          >
-            View all
-          </button>
         </div>
 
         <div className={`${dashboardScrollbarClass} max-h-[19.5rem] w-full`}>
@@ -1237,6 +1414,7 @@ const AppliedInfluencerSection = ({
                   key={row.id}
                   row={row}
                   onDecision={onDecision}
+                  onOpenInfluencer={onOpenInfluencer}
                   isDecisionLoading={Boolean(
                     decisionLoadingMap[`${row.campaignId}-${row.influencerId}`]
                   )}
@@ -1253,16 +1431,29 @@ const AppliedInfluencerSection = ({
 const AppliedInfluencerItem = ({
   row,
   onDecision,
+  onOpenInfluencer,
   isDecisionLoading,
 }: {
   row: AppliedInfluencerRow;
   onDecision: (row: AppliedInfluencerRow, field: ApplicantDecisionField) => void;
+  onOpenInfluencer: (campaignId: string) => void;
   isDecisionLoading: boolean;
 }) => {
   const platformIcon = getPlatformIconSrc(row.primaryPlatform);
 
   return (
-    <div className="grid w-full min-w-0 grid-cols-1 gap-3 border-b border-[#E6E6E6] py-3 first:pt-0 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => onOpenInfluencer(row.campaignId)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onOpenInfluencer(row.campaignId);
+        }
+      }}
+      className="grid w-full min-w-0 cursor-pointer grid-cols-1 gap-3 border-b border-[#E6E6E6] py-3 first:pt-0 transition hover:bg-[#F9F9F9] lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center"
+    >
       <div className="flex min-w-0 items-center gap-2">
         <AvatarBox src={row.avatarUrl} name={row.name} sizeClass="h-10 w-10" />
 
@@ -1319,7 +1510,10 @@ const AppliedInfluencerItem = ({
         <div className="ml-auto flex h-10 shrink-0 items-stretch lg:ml-20">
           <button
             type="button"
-            onClick={() => onDecision(row, "isRejected")}
+            onClick={(e) => {
+              e.stopPropagation();
+              onDecision(row, "isRejected");
+            }}
             disabled={isDecisionLoading}
             className="flex w-10 items-center justify-center rounded-l-lg border-y border-l border-[#D6D6D6] text-[#1A1A1A] disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
             aria-label="Reject"
@@ -1329,7 +1523,10 @@ const AppliedInfluencerItem = ({
 
           <button
             type="button"
-            onClick={() => onDecision(row, "isUndicided")}
+            onClick={(e) => {
+              e.stopPropagation();
+              onDecision(row, "isUndicided");
+            }}
             disabled={isDecisionLoading}
             className="flex w-10 items-center justify-center border border-[#D6D6D6] text-[#1A1A1A] disabled:cursor-not-allowed disabled:opacity-50"
             aria-label="Mark undecided"
@@ -1339,7 +1536,10 @@ const AppliedInfluencerItem = ({
 
           <button
             type="button"
-            onClick={() => onDecision(row, "isShortlisted")}
+            onClick={(e) => {
+              e.stopPropagation();
+              onDecision(row, "isShortlisted");
+            }}
             disabled={isDecisionLoading}
             className="flex w-10 items-center justify-center rounded-r-lg border-y border-r border-[#D6D6D6] text-[#1A1A1A] disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
             aria-label="Shortlist"
@@ -1545,7 +1745,7 @@ const CampaignListSection = ({
         <div className={`${dashboardScrollbarClass} max-h-[23.75rem] w-full`}>
           {!campaigns.length ? (
             <div className="py-10 text-center font-inter text-[0.875rem] text-[#969696]">
-              No campaigns found.
+              NA
             </div>
           ) : (
             <div className="flex w-full flex-col">

@@ -696,7 +696,7 @@ export default function BrandOnboardingPage() {
       }
 
       localStorage.removeItem("brandSignupDraft");
-      router.push("/brand/dashboard");
+      router.push("/brand/create-campaign?byAi=1");
     } catch (e) {
       const msg = getApiErrorMessage(e, "Failed to save onboarding step");
       setFormError(msg);
@@ -725,7 +725,7 @@ export default function BrandOnboardingPage() {
       }
 
       localStorage.removeItem("brandSignupDraft");
-      router.push("/brand/dashboard");
+      router.push("/brand/create-campaign?byAi=1");
     } catch (e) {
       const msg = getApiErrorMessage(e, "Failed to skip step");
       setFormError(msg);

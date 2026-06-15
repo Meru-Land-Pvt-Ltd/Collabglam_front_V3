@@ -781,23 +781,6 @@ export default function CampaignFilter({
           <button
             type="button"
             className={[
-              "h-8 w-8 rounded-[0.25rem] grid place-items-center transition-colors",
-              viewMode === "grid" ? "bg-white" : "bg-transparent",
-            ].join(" ")}
-            aria-pressed={viewMode === "grid"}
-            onClick={() => setViewMode("grid")}
-            title="Grid view"
-          >
-            <span className="grid grid-cols-2 grid-rows-2 gap-1" aria-hidden="true">
-              {[0, 1, 2, 3].map((i) => (
-                <span key={i} className="h-1.5 w-1.5 rounded-sm border border-[#1A1A1A]" />
-              ))}
-            </span>
-          </button>
-
-          <button
-            type="button"
-            className={[
               "h-8 w-8 rounded grid place-items-center transition-colors",
               viewMode === "list" ? "bg-white" : "bg-transparent",
             ].join(" ")}
@@ -814,6 +797,25 @@ export default function CampaignFilter({
               ))}
             </span>
           </button>
+
+          <button
+            type="button"
+            className={[
+              "h-8 w-8 rounded-[0.25rem] grid place-items-center transition-colors",
+              viewMode === "grid" ? "bg-white" : "bg-transparent",
+            ].join(" ")}
+            aria-pressed={viewMode === "grid"}
+            onClick={() => setViewMode("grid")}
+            title="Grid view"
+          >
+            <span className="grid grid-cols-2 grid-rows-2 gap-1" aria-hidden="true">
+              {[0, 1, 2, 3].map((i) => (
+                <span key={i} className="h-1.5 w-1.5 rounded-sm border border-[#1A1A1A]" />
+              ))}
+            </span>
+          </button>
+
+
         </div>
       </div>
     </div>

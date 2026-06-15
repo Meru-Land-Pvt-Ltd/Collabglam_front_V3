@@ -631,7 +631,7 @@ export default function CampaignListPage({
   title,
   fixedStatus,
 }: Props) {
-  const [viewMode, setViewMode] = useState<ViewMode>("grid");
+  const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [brandId, setBrandId] = useState<string>("");
   const [brandPlanId, setBrandPlanId] = useState<string>("");
 

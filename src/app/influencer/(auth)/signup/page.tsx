@@ -178,7 +178,6 @@ function InfluencerSignupContent() {
   const [creatorName, setCreatorName] = React.useState("");
   const [email, setEmail] = React.useState("");
   const [countryId, setCountryId] = React.useState("");
-  // const [countrySearch, setCountrySearch] = React.useState("");
   const [languageIds, setLanguageIds] = React.useState<string[]>([]);
   const [categoryIds, setCategoryIds] = React.useState<string[]>([]);
   const [password, setPassword] = React.useState("");
@@ -217,22 +216,6 @@ function InfluencerSignupContent() {
       agreed: false,
     });
   };
-
-  // const filteredCountries = React.useMemo(() => {
-  //   const q = countrySearch.trim().toLowerCase();
-
-  //   return countries
-  //     .filter((c) => !!(c._id ?? c.id))
-  //     .filter((c) => {
-  //       if (!q) return true;
-
-  //       const name = String(
-  //         (c as any)?.countryName ?? c.countryNameEn ?? ""
-  //       ).toLowerCase();
-
-  //       return name.includes(q);
-  //     });
-  // }, [countries, countrySearch]);
 
   const emailOk = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
 
@@ -324,6 +307,7 @@ function InfluencerSignupContent() {
       localStorage.setItem("influencerToken", (res as any).token);
       localStorage.setItem("token", (res as any).token);
     }
+
     if ((res as any)?.influencerId) {
       localStorage.setItem("influencerId", (res as any).influencerId);
     }
@@ -335,6 +319,7 @@ function InfluencerSignupContent() {
     const langs = languagesList.filter((x) =>
       languageIds.includes(String(x._id ?? x.id)),
     );
+
     const languageNames = langs
       .map((l) => l.name ?? l.code ?? null)
       .filter(Boolean);
@@ -342,6 +327,7 @@ function InfluencerSignupContent() {
     const cats = categoriesList.filter((x) =>
       categoryIds.includes(String(x.id)),
     );
+
     const categoryNames = cats.map((c) => c.name).filter(Boolean);
 
     localStorage.setItem(
@@ -382,6 +368,7 @@ function InfluencerSignupContent() {
     if (hasError) return;
 
     setIsSendingOtp(true);
+
     try {
       await runRecaptchaCheck(executeRecaptcha, "influencer_signup_send_otp");
       await sendOtp();
@@ -413,6 +400,7 @@ function InfluencerSignupContent() {
     }
 
     setIsVerifyingOtp(true);
+
     try {
       await runRecaptchaCheck(executeRecaptcha, "influencer_signup_verify_otp");
       await verifyOtp(otp);
@@ -441,11 +429,12 @@ function InfluencerSignupContent() {
 
     setOtp("");
     setOtpError(undefined);
-
     setIsSendingOtp(true);
+
     try {
       await runRecaptchaCheck(executeRecaptcha, "influencer_signup_resend_otp");
       await sendOtp();
+
       toast({
         icon: "success",
         title: "OTP resent",
@@ -473,7 +462,7 @@ function InfluencerSignupContent() {
     <div className="min-h-[100svh] bg-background text-foreground flex flex-col overflow-x-hidden">
       <ToastStyles />
 
-      <header className="w-full bg-white border-b border-bd-primary">
+      <header className="w-full shrink-0 bg-white border-b border-bd-primary">
         <div
           className={cn(
             "mx-auto flex flex-wrap items-center justify-between content-center",
@@ -513,22 +502,20 @@ function InfluencerSignupContent() {
         </div>
       </header>
 
-      <main
-        className={cn("max-w-full flex-1 min-h-0 overflow-y-auto", "py-[20px]")}
-      >
+      <main className="max-w-full flex-1 min-h-0 overflow-y-auto py-[16px] lg:py-[14px]">
         <div
           className={cn(
-            "grid min-h-0 items-stretch",
-            "lg:grid-cols-2 lg:min-h-[calc(100svh-114px)]",
+            "flex w-full min-h-0 flex-col gap-[24px]",
+            "lg:flex-row lg:items-stretch lg:gap-0",
           )}
         >
-          <section className="order-1 lg:h-full">
-            <div className="flex w-full lg:h-full lg:items-stretch pr-[20px]">
+          <section className="order-1 w-full lg:w-1/2 lg:flex-none">
+            <div className="flex w-full lg:sticky lg:top-[14px] lg:h-[calc(100svh-92px)] lg:items-stretch lg:pr-[20px]">
               <div
                 className={cn(
                   "relative w-full overflow-hidden",
                   "rounded-tr-[32px] rounded-br-[32px]",
-                  "h-[420px] sm:h-[520px] md:h-[640px] lg:h-full",
+                  "h-[360px] sm:h-[460px] md:h-[560px] lg:h-full",
                 )}
               >
                 <InfluencerHero className="h-full" />
@@ -538,12 +525,12 @@ function InfluencerSignupContent() {
 
           <section
             className={cn(
-              "order-2 flex px-[20px] justify-center w-full items-start",
-              step === "form" || step === "otp" ? "pt-[10px]" : "",
-              "lg:min-h-[calc(100svh-114px)]",
+              "order-2 flex w-full justify-center px-[20px]",
+              "items-start",
+              "lg:w-1/2 lg:flex-none lg:px-[20px]",
             )}
           >
-            <div className={cn("w-full max-w-[520px]")}>
+            <div className={cn("w-full max-w-[520px] pb-[24px]")}>
               {step === "form" && (
                 <>
                   <h1 className="cg-heading">Get Your Profile Started</h1>
@@ -553,7 +540,7 @@ function InfluencerSignupContent() {
 
                   <form
                     onSubmit={handleContinueFromForm}
-                    className="mt-2xl space-y-[16px]"
+                    className="mt-[18px] space-y-[14px] lg:mt-[16px] lg:space-y-[12px]"
                   >
                     <div>
                       <FloatingInput
@@ -667,7 +654,7 @@ function InfluencerSignupContent() {
                       ) : null}
                     </div>
 
-                    <div className="grid grid-cols-1 gap-[16px] md:grid-cols-2">
+                    <div className="grid grid-cols-1 gap-[14px] md:grid-cols-2">
                       <FloatingMultiSelect
                         label={
                           listsLoading ? "Languages (loading...)" : "Languages"
@@ -732,13 +719,7 @@ function InfluencerSignupContent() {
                       ) : null}
                     </div>
 
-                    <div className="mt-xl">
-                      {/*
-                        FIX: Checkbox error is indicated ONLY by the red border on the
-                        checkbox itself. The label text no longer changes to red, which
-                        was the redundant "additional error message" described in the bug.
-                        No separate <p> error text is rendered below the checkbox.
-                      */}
+                    <div className="mt-[14px]">
                       <label className="flex items-center gap-[10px] text-center text-[12px] leading-[16px] text-[#7A7A7A]">
                         <Checkbox
                           checked={agreed}
@@ -775,7 +756,6 @@ function InfluencerSignupContent() {
                           </Link>
                         </span>
                       </label>
-                      {/* No <p> error text here — the red border on the checkbox is sufficient */}
                     </div>
 
                     <Button
@@ -783,7 +763,7 @@ function InfluencerSignupContent() {
                       variant="solid"
                       size="lg"
                       className={cn(
-                        "w-full rounded-m mt-2xl",
+                        "w-full rounded-m mt-[18px]",
                         isSendingOtp && "opacity-60",
                       )}
                       disabled={isSendingOtp}
@@ -791,7 +771,12 @@ function InfluencerSignupContent() {
                       {isSendingOtp ? "Sending OTP..." : "Continue"}
                     </Button>
 
-                    <p className={cn(SUBTITLE_CLASS, "text-center mt-l")}>
+                    <p
+                      className={cn(
+                        SUBTITLE_CLASS,
+                        "text-center mt-[14px]",
+                      )}
+                    >
                       Already Have an Account?{" "}
                       <Link
                         href="/influencer/login"
@@ -893,7 +878,7 @@ function InfluencerSignupContent() {
                       <div
                         className={cn(
                           SUBTITLE_CLASS,
-                          " mt-[12px] flex items-center justify-center gap-1",
+                          "mt-[12px] flex items-center justify-center gap-1",
                         )}
                       >
                         <span className="leading-[20px]">

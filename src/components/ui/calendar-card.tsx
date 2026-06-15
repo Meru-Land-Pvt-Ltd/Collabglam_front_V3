@@ -22,6 +22,7 @@ type CalendarCardProps = {
 
   /** Screenshot uses Monday */
   weekStartsOn?: WeekStart;
+  maxDate?: Date | null;
 
   className?: string;
 };
@@ -101,9 +102,11 @@ export function CalendarCard({
   showYear = true,
   weekStartsOn = 1,
   className,
+  maxDate,
 }: CalendarCardProps) {
   const today = React.useMemo(() => clampDate(new Date()), []);
   const selected = value ? clampDate(value) : null;
+  const max = maxDate ? clampDate(maxDate) : null;
 
   const [viewMonth, setViewMonth] = React.useState<Date>(() =>
     startOfMonth(selected ?? today)
@@ -132,6 +135,7 @@ export function CalendarCard({
       inMonth: boolean;
       isToday: boolean;
       isSelected: boolean;
+      isDisabled: boolean;
     }> = [];
 
     for (let i = 0; i < 42; i++) {
@@ -144,11 +148,12 @@ export function CalendarCard({
         inMonth: cd.getMonth() === viewMonth.getMonth(),
         isToday: isSameDay(cd, today),
         isSelected: !!selected && isSameDay(cd, selected),
+        isDisabled: !!max && cd.getTime() > max.getTime(),
       });
     }
 
     return cells;
-  }, [viewMonth, selected, today, weekStartsOn]);
+  }, [viewMonth, selected, today, weekStartsOn, max]);
 
   const weekdays = weekStartsOn === 1 ? WEEKDAYS_MON : WEEKDAYS_SUN;
 
@@ -171,7 +176,7 @@ export function CalendarCard({
         // subtle “active” style like your top screenshot
         highlight && "ring-2 ring-purple-500",
         highlight &&
-          "after:content-[''] after:absolute after:inset-x-0 after:bottom-0 after:h-1 after:bg-purple-500",
+        "after:content-[''] after:absolute after:inset-x-0 after:bottom-0 after:h-1 after:bg-purple-500",
         className
       )}
     >
@@ -211,20 +216,25 @@ export function CalendarCard({
 
       {/* Days */}
       <div className="grid grid-cols-7 gap-y-[0.25rem] px-[1rem] pb-[1rem]">
-        {days.map(({ date, inMonth, isSelected, isToday }) => {
+        {days.map(({ date, inMonth, isSelected, isToday, isDisabled }) => {
           const label = date.getDate();
           return (
             <button
               key={date.toISOString()}
               type="button"
-              onClick={() => onChange?.(date)}
+              disabled={isDisabled}
+              onClick={() => {
+                if (isDisabled) return;
+                onChange?.(date);
+              }}
               className={cn(
                 "mx-auto grid size-[2.25rem] place-items-center rounded-full text-[0.875rem] font-medium transition",
                 "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 inMonth ? "text-foreground" : "text-muted-foreground/50",
-                !isSelected && inMonth && "hover:bg-secondary",
+                !isSelected && inMonth && !isDisabled && "hover:bg-secondary",
                 isToday && !isSelected && "ring-1 ring-border",
-                isSelected && "bg-primary text-primary-foreground"
+                isSelected && "bg-primary text-primary-foreground",
+                isDisabled && "cursor-not-allowed opacity-30 hover:bg-transparent"
               )}
               aria-pressed={isSelected}
             >

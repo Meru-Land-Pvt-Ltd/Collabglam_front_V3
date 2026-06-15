@@ -495,7 +495,6 @@ export default function BrandProfilePage() {
         brandName: form.brandName,
         companySize: form.companySize,
         brandType: form.brandType,
-        platform: form.platform,
       });
 
       const updatedProfile = (await apiGetBrandProfile(brandId)) as BrandProfile;

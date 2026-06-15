@@ -38,7 +38,6 @@ import {
   isValidDateRange,
   LAYOUT,
   MANUAL_PLATFORM_OPTIONS,
-  mapPlatforms,
   Option,
   pickCampaignId,
   platformToUi,
@@ -702,7 +701,6 @@ function buildEditDraftPayload(
     contentFormats: form.contentFormats,
     contentLanguageIds: form.contentLanguage,
 
-    platformSelection: mapPlatforms(form.platforms),
 
     targetCountryIds: form.targetCountry,
     targetAgeRanges: form.targetAgeGroups,
@@ -1635,7 +1633,6 @@ function CreateManualScreen({
           influencerTierIds: form.influencerTier,
           contentFormats: form.contentFormats,
           contentLanguageIds: form.contentLanguage,
-          platformSelection: mapPlatforms(form.platforms),
           targetCountryIds: form.targetCountry,
           targetAgeRanges: form.targetAgeGroups,
           preferredHashtags: form.hashtags,

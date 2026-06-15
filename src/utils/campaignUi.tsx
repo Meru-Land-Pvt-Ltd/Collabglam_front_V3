@@ -1,5 +1,5 @@
 // utils/campaignUi.ts
-import type { CampaignStatus, Platform } from "@/app/brand/services/brandApi";
+import type { CampaignStatus} from "@/app/brand/services/brandApi";
 import type { StatusVariant } from "@/components/ui/brand/card";
 
 export function statusToVariant(status: CampaignStatus): StatusVariant {
@@ -16,16 +16,7 @@ export function statusLabel(status: CampaignStatus) {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-export function normalizePlatform(p: Platform) {
-  return String(p || "").trim().toLowerCase();
-}
 
-export function platformCountLabel(platforms?: Platform[]) {
-  const n = platforms?.length ?? 0;
-  if (n === 0) return "-";
-  if (n === 1) return "1 Platform";
-  return `${n} Platforms`;
-}
 
 export function daysFromNow(iso?: string | null) {
   if (!iso) return null;

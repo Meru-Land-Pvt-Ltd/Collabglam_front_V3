@@ -56,7 +56,7 @@ const CAMPAIGN_PREFIX = "/brand/campaign";
 
 const ROUTES: Record<string, string> = {
   dashboard: "/brand/dashboard",
-  create: "/brand/create-campaign",
+  create: "/brand/create-campaign?byAi=1",
   campaigns: "/brand/campaign/all",
   campaigns_all: "/brand/campaign/all",
   campaigns_active: "/brand/campaign/active",

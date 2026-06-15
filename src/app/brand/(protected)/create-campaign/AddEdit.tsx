@@ -737,7 +737,7 @@ function useMediaQuery(query: string) {
 function CreateByAIScreen({
   sidebarOffsetPx: _sidebarOffsetPx,
   onBack: _onBack,
-  onSwitchToManual: _onSwitchToManual,
+  onSwitchToManual,
   onCreated,
   maxWidth: _maxWidth = LAYOUT.aiMaxWidth,
   lists: _lists,
@@ -979,7 +979,17 @@ function CreateByAIScreen({
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_100%,rgba(255,224,130,0.45)_0%,rgba(255,182,193,0.24)_22%,rgba(255,255,255,0)_50%)]" />
       <div className="pointer-events-none absolute left-[-140px] top-[-140px] h-[340px] w-[340px] rounded-full bg-pink-100/50 blur-3xl" />
       <div className="pointer-events-none absolute right-[-180px] bottom-[-160px] h-[380px] w-[380px] rounded-full bg-rose-100/60 blur-3xl" />
-
+      <div className="absolute right-5 top-5 z-20">
+        <Button
+          type="button"
+          variant="outline"
+          className="shadow-none bg-white/80 backdrop-blur"
+          onClick={onSwitchToManual}
+          disabled={submitting}
+        >
+          Create Manual
+        </Button>
+      </div>
       <input
         ref={fileInputRef}
         type="file"

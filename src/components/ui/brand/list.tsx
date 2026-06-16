@@ -3,7 +3,6 @@
 import * as React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  YoutubeLogo,
   FileMinus,
   Users as UsersIcon,
   PaperPlaneTilt,
@@ -68,8 +67,23 @@ export type ListCardViewProps = {
   className?: string;
 };
 
+function YoutubePlatformIcon() {
+  return (
+    <span
+      aria-hidden="true"
+      className="inline-flex box-border h-[22px] w-[22px] aspect-square shrink-0 items-center justify-center gap-7 rounded-[40px] border border-[#E6E6E6] bg-white px-[7px] py-[8px]"
+    >
+      <img
+        src="/logos_youtube-icon.svg"
+        alt=""
+        className="h-full w-full object-contain"
+        draggable={false}
+      />
+    </span>
+  );
+}
 export const MetricIcons = {
-  Platform: <YoutubeLogo size={16} weight="regular" />,
+  Platform: <YoutubePlatformIcon />,
   Contract: <FileMinus size={16} weight="regular" />,
   Influencer: <UsersIcon size={16} weight="regular" />,
   Email: <PaperPlaneTilt size={16} weight="regular" />,
@@ -174,7 +188,7 @@ function MetricItem({ id, label, value, icon }: ListCardMetric) {
 
       <div className="flex min-w-0 items-center justify-center gap-2 max-[520px]:gap-1.5">
         {iconNode ? (
-          <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center text-muted-foreground max-[520px]:scale-90">
+          <span className="inline-flex shrink-0 items-center justify-center text-muted-foreground">
             {iconNode}
           </span>
         ) : null}

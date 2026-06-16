@@ -357,8 +357,19 @@ function getCampaignEditHref(c: any, campaignId: string, campaignTitle?: string)
 
   return `/brand/edit-campaign?campaignId=${encodedId}&campaignTitle=${encodedTitle}`;
 }
-function getManageInfluencerHref(campaignId: string) {
-  return `/brand/influ/all?campaignId=${encodeURIComponent(campaignId)}`;
+function getManageInfluencerHref(campaignId: string, campaignTitle?: string) {
+  const params = new URLSearchParams();
+
+  if (campaignId) {
+    params.set("campaignId", campaignId);
+  }
+
+  if (campaignTitle) {
+    params.set("campaignName", campaignTitle);
+    params.set("campaignTitle", campaignTitle);
+  }
+
+  return `/brand/Influencer/all?${params.toString()}`;
 }
 
 function isCardInnerInteractive(target: EventTarget | null) {
@@ -1018,7 +1029,7 @@ export default function CampaignListPage({
     const handleView = () => {
       if (locked) return;
       if (typeof window !== "undefined") {
-        window.location.href = getManageInfluencerHref(campaignId);
+        window.location.href = getManageInfluencerHref(campaignId,campaignTitle);
       }
     };
 
@@ -1193,7 +1204,7 @@ export default function CampaignListPage({
       const handleView = () => {
         if (locked) return;
         if (typeof window !== "undefined") {
-          window.location.href = getManageInfluencerHref(campaignId);
+          window.location.href = getManageInfluencerHref(campaignId,campaignTitle);
         }
       };
 

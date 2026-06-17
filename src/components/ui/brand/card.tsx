@@ -7,9 +7,6 @@ import {
   PaperPlaneTilt,
   Users,
   Wallet,
-  YoutubeLogo,
-  InstagramLogo,
-  TiktokLogo,
 } from "@phosphor-icons/react";
 
 export type CardSize = "sm" | "md" | "lg";
@@ -58,15 +55,25 @@ export interface BrandCampaignCardProps {
 const cx = (...c: Array<string | undefined | null | false>) =>
   c.filter(Boolean).join(" ");
 
+function YoutubePlatformIcon() {
+  return (
+    <span
+      aria-hidden="true"
+      className="inline-flex box-border h-[22px] w-[22px] aspect-square shrink-0 items-center justify-center gap-7 rounded-[40px] border border-[#E6E6E6] bg-white px-[7px] py-[8px]"
+    >
+      <img
+        src="/logos_youtube-icon.svg"
+        alt=""
+        className="h-full w-full object-contain"
+        draggable={false}
+      />
+    </span>
+  );
+}
 function getDefaultIcon(label: string) {
   const key = label.trim().toLowerCase();
-
   if (key === "platform" || key === "youtube") {
-    return <YoutubeLogo weight="regular" />;
-  }
-  if (key === "instagram") return <InstagramLogo weight="regular" />;
-  if (key === "tiktok" || key === "tik tok") {
-    return <TiktokLogo weight="regular" />;
+    return <YoutubePlatformIcon />;
   }
 
   if (key === "wallet balance" || key === "wallet" || key === "budget") {
@@ -554,7 +561,7 @@ export default function BrandCampaignCard({
 
                     <div className="flex min-w-0 items-center justify-center gap-1">
                       {iconNode ? (
-                        <span className="inline-flex rounded-full p-1 text-muted-foreground">
+                        <span className="inline-flex shrink-0 items-center justify-center text-muted-foreground">
                           {iconNode}
                         </span>
                       ) : null}

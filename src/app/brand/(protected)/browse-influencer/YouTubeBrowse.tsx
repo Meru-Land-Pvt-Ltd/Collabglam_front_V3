@@ -3,15 +3,27 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
+  Award,
+  BadgeCheck,
+  BarChart3,
   CalendarDays,
+  CheckCircle2,
   ChevronDown,
   Eye,
   Globe,
+  Heart,
+  Lock,
   Mail,
+  PlayCircle,
   Search,
+  ShieldCheck,
   SlidersHorizontal,
+  Sparkles,
+  Target,
+  TrendingUp,
+  Users,
   X,
-  Youtube,
+  Zap,
 } from "lucide-react";
 
 type CreatorScores = {
@@ -102,6 +114,101 @@ type YouTubeCreator = {
     softFiltersApplied?: boolean;
   };
   scores?: CreatorScores;
+};
+
+
+type BrandMediaKitData = {
+  creatorOverview?: {
+    creatorName?: string;
+    channelName?: string;
+    profilePhoto?: string;
+    category?: string;
+    creatorTier?: string;
+    primaryLanguage?: string;
+    country?: string;
+    estimatedAudienceCountry?: string;
+    countryConfidence?: number;
+    yearsOnYouTube?: number;
+    activeSinceLabel?: string;
+  };
+  coreMetrics?: {
+    subscribers?: number;
+    totalViews?: number;
+    totalVideos?: number;
+    avgViews?: number;
+    medianViews?: number;
+    avgLikes?: number;
+    avgComments?: number;
+    engagementRate?: number;
+    viewToSubscriberRatio?: number;
+    recentUploadDate?: string;
+    uploadsLast30Days?: number;
+    uploadsLast90Days?: number;
+    uploadsLast2Years?: number;
+  };
+  performanceScores?: {
+    engagementScore?: number;
+    consistencyScore?: number;
+    authenticityScore?: number;
+    brandSafetyScore?: number;
+    sponsorshipScore?: number;
+    relevancyScore?: number;
+    campaignFitScore?: number;
+    nicheFitScore?: number;
+  };
+  audienceInsights?: {
+    estimatedAudienceCountries?: { country: string; percentage: number }[];
+    interestCategories?: string[];
+    contentLanguage?: string;
+  };
+  brandFit?: {
+    matchedCampaignKeyword?: string;
+    matchedTopics?: string[];
+    campaignFit?: string;
+    whyThisCreatorFits?: string[];
+  };
+  contentAnalysis?: {
+    contentType?: string;
+    uploadFrequency?: string;
+    shortsPercentage?: number;
+    longFormPercentage?: number;
+    averageVideoLengthMinutes?: number | null;
+    recentVideoThemes?: string[];
+  };
+  sponsorshipAnalysis?: {
+    sponsoredVideosDetected?: number;
+    sponsorshipFrequency?: number;
+    recentSponsors?: string[];
+    promoCodeMentions?: number;
+    affiliateLinksDetected?: boolean;
+    collaborationReadiness?: string;
+  };
+  brandSafety?: {
+    score?: number;
+    riskLevel?: string;
+    flags?: string[];
+    safeCategories?: string[];
+  };
+  topPerformingVideos?: RecentVideo[];
+  recentVideos?: RecentVideo[];
+  campaignPrediction?: {
+    expectedViewsLow?: number;
+    expectedViewsHigh?: number;
+    expectedEngagementLow?: number;
+    expectedEngagementHigh?: number;
+    recommendedDeliverables?: string[];
+    budgetFit?: string;
+  };
+  contact?: {
+    hasContactInfo?: boolean;
+    maskedEmail?: string;
+    website?: string;
+    socialLinks?: { platform: string; url: string }[];
+  };
+  collabGlamRecommendation?: {
+    recommendation?: string;
+    summary?: string;
+  };
 };
 
 type Pagination = {
@@ -468,14 +575,6 @@ function trimText(value?: string, limit = 150) {
   return `${text.slice(0, limit)}...`;
 }
 
-function maskEmail(value?: string) {
-  const email = String(value || "").trim();
-  if (!email || !email.includes("@")) return "";
-  const domain = email.split("@").pop() || "";
-  const extensionMatch = domain.match(/\.[a-z]{2,}$/i);
-  return `xxxxxxxx${extensionMatch?.[0] || ".com"}`;
-}
-
 function getSubs(creator?: YouTubeCreator | null) {
   return Number(creator?.subscribers || creator?.subscriberCount || 0);
 }
@@ -682,6 +781,49 @@ async function fetchYouTubeCreators(
   return data;
 }
 
+
+async function fetchBrandMediaKit(
+  channelId: string,
+  filters: Partial<Filters> = {},
+) {
+  const params = new URLSearchParams();
+  ["keyword", "category", "country"].forEach((key) => {
+    const value = (filters as Record<string, unknown>)[key];
+    if (value !== undefined && value !== null && String(value).trim() !== "") {
+      params.set(key, String(value).trim());
+    }
+  });
+
+  const query = params.toString() ? `?${params.toString()}` : "";
+
+  const requestMediaKit = async (path: string) => {
+    const response = await fetch(getApiUrl(path), {
+      method: "GET",
+      credentials: "include",
+    });
+    const payload = await response.json().catch(() => ({}));
+    return { response, payload };
+  };
+
+  // New separate media-kit API.
+  let { response, payload } = await requestMediaKit(
+    `/youtube-data/media-kit/${channelId}${query}`,
+  );
+
+  // Fallback for servers that still have the older route only.
+  if (response.status === 404) {
+    ({ response, payload } = await requestMediaKit(
+      `/youtube-data/creators/${channelId}/media-kit${query}`,
+    ));
+  }
+
+  if (!response.ok || payload.success === false) {
+    throw new Error(payload.error || "Failed to load media kit");
+  }
+
+  return payload.data as BrandMediaKitData;
+}
+
 function hasSearchCriteria(
   filters: Partial<Filters> & Record<string, unknown>,
   campaignId?: string,
@@ -697,48 +839,108 @@ function hasSearchCriteria(
   );
 }
 
-function FieldRow({
-  label,
-  value,
-}: {
-  label: string;
-  value?: React.ReactNode;
-}) {
-  return (
-    <div className="flex items-start justify-between gap-4 border-b border-[#f1e8df] py-3 last:border-b-0">
-      <span className="text-sm font-medium text-[#8a8179]">{label}</span>
-      <span className="max-w-[70%] text-right text-sm font-semibold text-black">
-        {value || "-"}
-      </span>
-    </div>
-  );
+function scoreOrZero(value?: number) {
+  const n = Number(value || 0);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(100, Math.round(n)));
 }
 
-function ScorePill({ label, value }: { label: string; value?: number }) {
-  const finalValue = Number(value || 0);
-  return (
-    <div className="rounded-[14px] border border-[#eee5da] bg-[#fffdfa] px-4 py-3">
-      <p className="text-xs font-semibold text-[#9a928b]">{label}</p>
-      <p className="mt-1 text-lg font-bold text-black">{finalValue}%</p>
-    </div>
-  );
+function formatPercent(value?: number) {
+  const n = Number(value || 0);
+  if (!Number.isFinite(n)) return "0%";
+  return `${Math.round(n * 100) / 100}%`;
 }
 
-function InfoCard({
+function getTopScoreLabel(score?: number) {
+  const value = scoreOrZero(score);
+  if (value >= 85) return "Strong Match";
+  if (value >= 70) return "Good Match";
+  if (value >= 55) return "Moderate Match";
+  return "Needs Review";
+}
+
+function MiniStatCard({
+  icon,
   label,
   value,
   sub,
 }: {
+  icon: React.ReactNode;
   label: string;
   value: string | number;
   sub?: string;
 }) {
   return (
-    <div className="rounded-[16px] border border-[#eee5da] bg-white p-4">
-      <p className="text-xs font-semibold text-[#a69d95]">{label}</p>
-      <p className="mt-2 text-[20px] font-semibold text-black">{value}</p>
-      {sub ? <p className="mt-1 text-xs text-[#9a928b]">{sub}</p> : null}
+    <div className="rounded-[18px] border border-[#f1e2c2] bg-white/95 p-4 shadow-sm">
+      <div className="mb-3 flex h-8 w-8 items-center justify-center rounded-full bg-[#fff3c4] text-[#9a6500]">
+        {icon}
+      </div>
+      <p className="text-xs font-semibold text-[#9a8a73]">{label}</p>
+      <p className="mt-1 text-[22px] font-bold text-black">{value}</p>
+      {sub ? <p className="mt-1 text-xs text-[#8b806f]">{sub}</p> : null}
     </div>
+  );
+}
+
+function ScoreCard({
+  icon,
+  label,
+  value,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value?: number;
+}) {
+  return (
+    <div className="min-w-[150px] rounded-[18px] border border-[#f1e2c2] bg-white px-4 py-4 text-center shadow-sm">
+      <div className="mx-auto mb-2 flex h-8 w-8 items-center justify-center rounded-full bg-[#fff3c4] text-[#9a6500]">
+        {icon}
+      </div>
+      <p className="text-[22px] font-bold text-black">{scoreOrZero(value)}</p>
+      <p className="mt-1 text-xs font-medium text-[#8c8171]">{label}</p>
+    </div>
+  );
+}
+
+function YellowProgress({ value }: { value?: number }) {
+  const finalValue = Math.max(0, Math.min(100, Number(value || 0)));
+  return (
+    <div className="h-2 overflow-hidden rounded-full bg-[#f1e2c2]">
+      <div
+        className="h-full rounded-full bg-gradient-to-r from-[#f59e0b] to-[#facc15]"
+        style={{ width: `${finalValue}%` }}
+      />
+    </div>
+  );
+}
+
+function KitSection({
+  title,
+  icon,
+  children,
+  className = "",
+}: {
+  title: string;
+  icon?: React.ReactNode;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <section className={`rounded-[22px] border border-[#f1e2c2] bg-white p-5 shadow-sm ${className}`}>
+      <div className="mb-4 flex items-center gap-2">
+        {icon ? <span className="text-[#b7791f]">{icon}</span> : null}
+        <h4 className="text-[17px] font-bold text-black">{title}</h4>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function Pill({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="rounded-full border border-[#efdba5] bg-[#fff8e6] px-3 py-1 text-xs font-semibold text-[#7a5a16]">
+      {children}
+    </span>
   );
 }
 
@@ -746,305 +948,364 @@ function MediaKitDrawer({
   creator,
   open,
   onClose,
+  filters,
 }: {
   creator: YouTubeCreator | null;
   open: boolean;
   onClose: () => void;
+  filters: Filters;
 }) {
+  const [mediaKit, setMediaKit] = useState<BrandMediaKitData | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadMediaKit() {
+      if (!open || !creator?.channelId) return;
+      try {
+        setLoading(true);
+        setError("");
+        const data = await fetchBrandMediaKit(creator.channelId, filters);
+        if (mounted) setMediaKit(data);
+      } catch (err: any) {
+        if (mounted) setError(err?.message || "Failed to load media kit");
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    }
+
+    loadMediaKit();
+
+    return () => {
+      mounted = false;
+    };
+  }, [open, creator?.channelId, filters.keyword, filters.category, filters.country]);
+
+  useEffect(() => {
+    if (!open) {
+      setMediaKit(null);
+      setError("");
+    }
+  }, [open]);
+
   if (!open || !creator) return null;
 
-  const videos = creator.recentVideoTitles || [];
-  const description = creator.channelDescription || creator.description;
-  const emails = creator.contact?.totalEmails || [];
-  const maskedEmails = Array.from(new Set(emails.map(maskEmail).filter(Boolean)));
-  const website = String(creator.contact?.website || "").trim();
-  const socialLinks = [
-    creator.contact?.instagram,
-    creator.contact?.twitter,
-    creator.contact?.facebook,
-    creator.contact?.linkedin,
-    ...(creator.contact?.otherSocials || []),
-  ].filter(Boolean) as string[];
-  const uniqueSocialLinks = Array.from(new Set(socialLinks));
-  const hasContactInfo = Boolean(
-    maskedEmails.length || website || uniqueSocialLinks.length,
+  const overview = mediaKit?.creatorOverview;
+  const metrics = mediaKit?.coreMetrics;
+  const scores = mediaKit?.performanceScores;
+  const audience = mediaKit?.audienceInsights;
+  const brandFit = mediaKit?.brandFit;
+  const content = mediaKit?.contentAnalysis;
+  const sponsorship = mediaKit?.sponsorshipAnalysis;
+  const safety = mediaKit?.brandSafety;
+  const prediction = mediaKit?.campaignPrediction;
+  const contact = mediaKit?.contact;
+  const recommendation = mediaKit?.collabGlamRecommendation;
+  const topVideos = mediaKit?.topPerformingVideos || [];
+  const fitScore = scoreOrZero(scores?.campaignFitScore || scores?.relevancyScore);
+  const hasContact = Boolean(
+    contact?.hasContactInfo &&
+      (contact?.maskedEmail || contact?.website || (contact?.socialLinks || []).length),
   );
 
   return (
-    <div className="fixed inset-0 z-[80] bg-black/25" onClick={onClose}>
+    <div className="fixed inset-0 z-[80] bg-black/35" onClick={onClose}>
       <div
-        className="absolute right-0 top-0 h-full w-full max-w-[780px] overflow-y-auto bg-white shadow-2xl"
+        className="absolute right-0 top-0 h-full w-full max-w-[940px] overflow-y-auto bg-[#fffdf7] shadow-2xl"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-[#eee5da] bg-white px-7 py-5">
+        <div className="sticky top-0 z-20 flex items-center justify-between border-b border-[#f1e2c2] bg-[#fffdf7]/95 px-7 py-5 backdrop-blur">
           <div>
-            <p className="text-sm font-semibold text-[#8d837b]">
-              Influencer media kit
-            </p>
-            <h2 className="text-[24px] font-semibold text-black">
-              {creator.channelName}
+            <p className="text-sm font-semibold text-[#9a7a38]">Influencer media kit</p>
+            <h2 className="text-[24px] font-bold text-black">
+              {overview?.creatorName || creator.channelName}
             </h2>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-[#f4f0ea]"
+            className="flex h-11 w-11 items-center justify-center rounded-full bg-[#fff3d5] text-black"
           >
-            <X className="h-5 w-5 text-black" />
+            <X className="h-5 w-5" />
           </button>
         </div>
 
-        <div className="px-7 py-7">
-          <div className="flex items-start gap-5">
-            <AvatarImage
-              src={creator.thumbnail}
-              name={creator.channelName}
-              className="h-24 w-24 rounded-full object-cover"
-            />
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-3">
-                <h3 className="text-[28px] font-bold text-black">
-                  {creator.channelName}
-                </h3>
-                <span className="rounded-full bg-[#ecfff1] px-3 py-1 text-xs font-semibold text-[#1aa34a]">
-                  Active
-                </span>
+        {loading ? (
+          <div className="px-7 py-20">
+            <div className="mx-auto max-w-[520px] rounded-[28px] border border-[#f1e2c2] bg-white p-8 text-center shadow-sm">
+              <div className="mx-auto flex h-16 w-16 animate-pulse items-center justify-center rounded-full bg-[#fff3c4] text-[#9a6500]">
+                <Sparkles className="h-8 w-8" />
               </div>
-              <p className="mt-1 text-sm text-[#8a8179]">
-                {creator.creatorTier ||
-                  getCreatorTierValue(creator) ||
-                  "Creator"}{" "}
-                · {creator.category || creator.channelCategory || "YouTube"} ·{" "}
-                {creator.primaryLanguage || "Language unknown"}
+              <h3 className="mt-5 text-xl font-bold text-black">Building brand-ready media kit</h3>
+              <p className="mt-2 text-sm leading-6 text-[#7d725f]">
+                We’re preparing performance, audience, brand-fit, safety, and prediction insights for this creator.
               </p>
-              <p className="mt-1 text-sm text-[#8a8179]">
-                {creator.estimatedAudienceCountry ||
-                  creator.country ||
-                  "Audience country unknown"}
-                {creator.scores?.audienceCountryConfidence
-                  ? ` · ${creator.scores.audienceCountryConfidence}% country confidence`
-                  : ""}
-              </p>
-              <p className="mt-5 text-sm leading-6 text-[#827970]">
-                {trimText(description, 360)}
-              </p>
-              <div className="mt-5 flex flex-wrap gap-3">
-                <button
-                  type="button"
-                  className="rounded-xl bg-black px-5 py-3 text-sm font-semibold text-white"
-                >
-                  Connect With Influencer
-                </button>
-                {maskEmail(creator.contact?.youtubeAboutEmail) ? (
-                  <span className="rounded-xl border border-[#e4d8cc] bg-white px-5 py-3 text-sm font-semibold text-black">
-                    {maskEmail(creator.contact?.youtubeAboutEmail)}
+            </div>
+          </div>
+        ) : error ? (
+          <div className="m-7 rounded-[18px] border border-[#fecaca] bg-[#fff1f2] px-5 py-4 text-[#b91c1c]">
+            {error}
+          </div>
+        ) : mediaKit ? (
+          <div className="px-7 py-7">
+            <section className="overflow-hidden rounded-[26px] border border-[#f1dca6] bg-gradient-to-br from-[#2b1b05] via-[#6f4304] to-[#f2b84b] p-6 text-white shadow-[0_22px_80px_rgba(124,74,16,0.22)]">
+              <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+                <div className="flex items-center gap-5">
+                  <AvatarImage
+                    src={overview?.profilePhoto || creator.thumbnail}
+                    name={overview?.creatorName || creator.channelName}
+                    className="h-24 w-24 rounded-full border-4 border-white/20 object-cover"
+                  />
+                  <div>
+                    <h3 className="text-[32px] font-black leading-tight">
+                      {overview?.creatorName || creator.channelName}
+                    </h3>
+                    <p className="mt-1 text-sm text-white/80">
+                      {overview?.creatorTier || getCreatorTierLabel(creator)} · {overview?.category || creator.category || creator.channelCategory || "YouTube Creator"} · {overview?.primaryLanguage || creator.primaryLanguage || "Language unknown"}
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-semibold">{overview?.estimatedAudienceCountry || overview?.country || creator.country || "Audience unknown"}</span>
+                      {overview?.activeSinceLabel ? <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-semibold">{overview.activeSinceLabel}</span> : null}
+                      <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-semibold">YouTube</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-col items-center rounded-[24px] bg-white/12 px-7 py-5 backdrop-blur">
+                  <div className="flex h-24 w-24 items-center justify-center rounded-full border-[7px] border-[#facc15] bg-black/20 text-2xl font-black">
+                    {fitScore}
+                  </div>
+                  <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-white/75">Campaign fit</p>
+                  <span className="mt-2 rounded-full bg-[#dcfce7] px-3 py-1 text-xs font-bold text-[#166534]">
+                    {getTopScoreLabel(fitScore)}
                   </span>
-                ) : null}
+                </div>
               </div>
+            </section>
+
+            <div className="mt-5 flex gap-4 overflow-x-auto pb-2">
+              <ScoreCard icon={<Heart className="h-4 w-4" />} label="Engagement" value={scores?.engagementScore} />
+              <ScoreCard icon={<Users className="h-4 w-4" />} label="Country Confidence" value={overview?.countryConfidence} />
+              <ScoreCard icon={<BadgeCheck className="h-4 w-4" />} label="Authenticity" value={scores?.authenticityScore} />
+              <ScoreCard icon={<ShieldCheck className="h-4 w-4" />} label="Brand Safety" value={scores?.brandSafetyScore} />
+              <ScoreCard icon={<Award className="h-4 w-4" />} label="Sponsorship" value={scores?.sponsorshipScore} />
+              <ScoreCard icon={<Target className="h-4 w-4" />} label="Campaign Fit" value={scores?.campaignFitScore} />
             </div>
-          </div>
 
-          <div className="mt-7 grid grid-cols-2 gap-5 lg:grid-cols-4">
-            <InfoCard
-              label="Subscribers"
-              value={formatNumber(getSubs(creator))}
-            />
-            <InfoCard
-              label="Total views"
-              value={formatNumber(
-                creator.totalViews || creator.totalLifetimeViews,
-              )}
-            />
-            <InfoCard
-              label="Total videos"
-              value={formatNumber(
-                creator.totalVideos || creator.totalLifetimeVideos,
-              )}
-            />
-            <InfoCard
-              label="Years on YouTube"
-              value={creator.yearsOnYouTube || "-"}
-            />
-            <InfoCard
-              label="Avg views"
-              value={formatNumber(creator.avgViews)}
-              sub="recent sample"
-            />
-            <InfoCard
-              label="Avg likes"
-              value={formatNumber(creator.avgLikes)}
-              sub="recent sample"
-            />
-            <InfoCard
-              label="Avg comments"
-              value={formatNumber(creator.avgComments)}
-              sub="recent sample"
-            />
-            <InfoCard
-              label="Engagement"
-              value={`${creator.engagementRate || 0}%`}
-              sub="likes + comments / views"
-            />
-          </div>
-
-          <div className="mt-5 grid grid-cols-1 gap-5">
-            <div className="rounded-[20px] border border-[#eee5da] bg-white p-5">
-              <h4 className="text-[18px] font-semibold text-black">
-                Creator overview
-              </h4>
-              <div className="mt-3">
-                <FieldRow
-                  label="Category"
-                  value={creator.category || creator.channelCategory || "-"}
-                />
-                <FieldRow
-                  label="Content flag"
-                  value={creator.contentFlag || "Original"}
-                />
-                <FieldRow
-                  label="Created date"
-                  value={formatDate(creator.channelCreatedDate)}
-                />
-                <FieldRow
-                  label="Recent upload"
-                  value={formatDate(creator.recentUploadDate)}
-                />
-                <FieldRow
-                  label="Videos last 90 days"
-                  value={creator.totalVideosLast90Days ?? "-"}
-                />
-                <FieldRow
-                  label="Videos last 2 years"
-                  value={creator.totalVideosLast2Years ?? "-"}
-                />
-                <FieldRow
-                  label="Activity lookback"
-                  value={
-                    creator.activityLookbackDays
-                      ? `${creator.activityLookbackDays} days`
-                      : "-"
-                  }
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-5 rounded-[20px] border border-[#eee5da] bg-white p-5">
-            <h4 className="text-[18px] font-semibold text-black">
-              All available scores
-            </h4>
-            <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
-              <ScorePill
-                label="Sponsorship"
-                value={creator.scores?.sponsorshipScore}
-              />
-              <ScorePill
-                label="Engagement"
-                value={creator.scores?.engagementScore}
-              />
-              <ScorePill
-                label="Consistency"
-                value={creator.scores?.consistencyScore}
-              />
-              <ScorePill
-                label="Brand safety"
-                value={creator.scores?.brandSafetyScore}
-              />
-              <ScorePill
-                label="Relevancy"
-                value={creator.scores?.relevancyScore}
-              />
-              <ScorePill
-                label="Authenticity"
-                value={creator.scores?.authenticityScore}
-              />
-              <ScorePill
-                label="Audience confidence"
-                value={creator.scores?.audienceCountryConfidence}
-              />
-              <ScorePill
-                label="Shortlist"
-                value={
-                  creator.scores?.shortlistScore || creator.shortlist?.score
-                }
-              />
-            </div>
-          </div>
-
-          {hasContactInfo ? (
-            <div className="mt-5 rounded-[20px] border border-[#eee5da] bg-white p-5">
-              <h4 className="text-[18px] font-semibold text-black">
-                Contact information
-              </h4>
-              <div className="mt-4 grid gap-3 text-sm text-[#6f665f]">
-                {maskedEmails.length ? (
-                  <div className="flex items-center gap-3">
-                    <Mail className="h-4 w-4" />
-                    {maskedEmails.join(", ")}
+            <KitSection title="Who Watches This Creator" icon={<Users className="h-5 w-5" />} className="mt-5">
+              <div className="grid gap-6 md:grid-cols-[1.2fr_1fr_0.8fr]">
+                <div>
+                  <p className="mb-3 text-xs font-bold uppercase text-[#9a8a73]">Top audience countries</p>
+                  <div className="space-y-3">
+                    {(audience?.estimatedAudienceCountries || []).slice(0, 4).map((item) => (
+                      <div key={item.country}>
+                        <div className="mb-1 flex justify-between text-xs font-semibold text-[#6d6255]">
+                          <span>{item.country}</span>
+                          <span>{item.percentage}%</span>
+                        </div>
+                        <YellowProgress value={item.percentage} />
+                      </div>
+                    ))}
                   </div>
-                ) : null}
-                {website ? (
-                  <div className="flex items-center gap-3 break-all">
-                    <Globe className="h-4 w-4 shrink-0" />
-                    {website}
-                  </div>
-                ) : null}
-                {uniqueSocialLinks.length ? (
-                  <div className="flex items-start gap-3">
-                    <Youtube className="mt-0.5 h-4 w-4 shrink-0" />
-                    <span className="break-all">
-                      {uniqueSocialLinks.join(", ")}
-                    </span>
-                  </div>
-                ) : null}
-              </div>
-            </div>
-          ) : null}
+                </div>
 
-          <div className="mt-8">
-            <h4 className="text-[22px] font-semibold text-black">
-              Recent Posts
-            </h4>
-            {videos.length === 0 ? (
-              <div className="mt-4 rounded-[20px] border border-[#eee5da] px-5 py-10 text-center text-[#777]">
-                No recent video data available.
+                <div>
+                  <p className="mb-3 text-xs font-bold uppercase text-[#9a8a73]">What they care about</p>
+                  <div className="flex flex-wrap gap-2">
+                    {(audience?.interestCategories || []).slice(0, 10).map((topic) => (
+                      <Pill key={topic}>{topic}</Pill>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <p className="mb-3 text-xs font-bold uppercase text-[#9a8a73]">Content language</p>
+                  <div className="rounded-[18px] bg-[#fff8e6] p-4">
+                    <p className="text-sm font-bold text-black">{audience?.contentLanguage || overview?.primaryLanguage || "Unknown"}</p>
+                  </div>
+                </div>
               </div>
-            ) : (
-              <div className="mt-5 grid grid-cols-2 gap-5">
-                {videos.slice(0, 8).map((video) => (
+            </KitSection>
+
+            <KitSection title="Reach & Consistency" icon={<TrendingUp className="h-5 w-5" />} className="mt-5">
+              <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+                <MiniStatCard icon={<Users className="h-4 w-4" />} label="Subscribers" value={formatNumber(metrics?.subscribers)} />
+                <MiniStatCard icon={<Eye className="h-4 w-4" />} label="Average views" value={formatNumber(metrics?.avgViews)} />
+                <MiniStatCard icon={<BarChart3 className="h-4 w-4" />} label="Median views" value={formatNumber(metrics?.medianViews)} />
+                <MiniStatCard icon={<Heart className="h-4 w-4" />} label="Engagement rate" value={formatPercent(metrics?.engagementRate)} />
+                <MiniStatCard icon={<TrendingUp className="h-4 w-4" />} label="View/subscriber" value={formatPercent(metrics?.viewToSubscriberRatio)} />
+                <MiniStatCard icon={<CalendarDays className="h-4 w-4" />} label="Uploads 30 days" value={metrics?.uploadsLast30Days || 0} />
+                <MiniStatCard icon={<CalendarDays className="h-4 w-4" />} label="Uploads 90 days" value={metrics?.uploadsLast90Days || 0} />
+                <MiniStatCard icon={<Zap className="h-4 w-4" />} label="Upload frequency" value={content?.uploadFrequency || "Unknown"} />
+              </div>
+            </KitSection>
+
+            <KitSection title="Our Recommendation" icon={<Sparkles className="h-5 w-5" />} className="mt-5 bg-[#fff8e6]">
+              <div className="grid gap-5 md:grid-cols-[0.8fr_1.2fr]">
+                <div>
+                  <span className="inline-flex items-center gap-2 rounded-full bg-[#dcfce7] px-3 py-1 text-xs font-bold text-[#166534]">
+                    <CheckCircle2 className="h-3.5 w-3.5" /> {recommendation?.recommendation || brandFit?.campaignFit || "Recommended"}
+                  </span>
+                  <p className="mt-4 text-sm leading-6 text-[#6f6658]">{recommendation?.summary}</p>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {(brandFit?.matchedTopics || []).slice(0, 6).map((topic) => (
+                      <Pill key={topic}>{topic}</Pill>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <p className="mb-3 text-xs font-bold uppercase text-[#9a8a73]">Why we recommend</p>
+                  <div className="space-y-2">
+                    {(brandFit?.whyThisCreatorFits || []).map((reason) => (
+                      <div key={reason} className="flex items-start gap-2 text-sm text-[#4f463d]">
+                        <CheckCircle2 className="mt-0.5 h-4 w-4 flex-none text-[#16a34a]" />
+                        <span>{reason}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </KitSection>
+
+            <KitSection title="Content Breakdown" icon={<PlayCircle className="h-5 w-5" />} className="mt-5">
+              <div className="grid gap-6 md:grid-cols-[0.8fr_1.2fr]">
+                <div className="flex flex-col items-center justify-center">
                   <div
-                    key={video.videoId || video.title}
-                    className="overflow-hidden rounded-[20px] border border-[#eee5da] bg-white shadow-sm"
+                    className="relative flex h-36 w-36 items-center justify-center rounded-full"
+                    style={{
+                      background: `conic-gradient(#f59e0b ${content?.shortsPercentage || 0}%, #fef3c7 0)`,
+                    }}
                   >
-                    <div className="aspect-video bg-[#f4f0ea]">
-                      <VideoThumbnail
-                        src={video.thumbnail}
-                        title={video.title}
-                      />
+                    <div className="flex h-24 w-24 flex-col items-center justify-center rounded-full bg-white text-center">
+                      <span className="text-2xl font-black text-black">{content?.shortsPercentage || 0}%</span>
+                      <span className="text-xs text-[#8b806f]">Shorts est.</span>
                     </div>
-                    <div className="p-4">
-                      <div className="flex items-center justify-between gap-3 text-xs text-[#8a8179]">
-                        <span>{formatNumber(video.views)} views</span>
-                        <span>{formatNumber(video.likes)} likes</span>
-                        <span>{formatNumber(video.comments)} comments</span>
-                      </div>
-                      <h5 className="mt-3 line-clamp-2 text-sm font-semibold text-black">
-                        {video.title || "Untitled video"}
-                      </h5>
-                      <p className="mt-2 line-clamp-3 text-xs leading-5 text-[#8a8179]">
-                        {trimText(video.description, 110)}
-                      </p>
-                      <div className="mt-3 flex items-center gap-2 text-xs text-[#8a8179]">
-                        <CalendarDays className="h-3 w-3" />
-                        {formatDate(video.publishedAt)}
-                      </div>
+                  </div>
+                  <div className="mt-4 flex gap-4 text-xs text-[#7d725f]">
+                    <span>Long-form {content?.longFormPercentage || 0}%</span>
+                    <span>Shorts {content?.shortsPercentage || 0}%</span>
+                  </div>
+                </div>
+                <div>
+                  <p className="mb-3 text-xs font-bold uppercase text-[#9a8a73]">Recent video themes</p>
+                  <div className="flex flex-wrap gap-2">
+                    {(content?.recentVideoThemes || []).slice(0, 12).map((theme) => (
+                      <Pill key={theme}>{theme}</Pill>
+                    ))}
+                  </div>
+                  <div className="mt-5 grid grid-cols-2 gap-3">
+                    <MiniStatCard icon={<PlayCircle className="h-4 w-4" />} label="Content type" value={content?.contentType || "Mixed"} />
+                    <MiniStatCard icon={<CalendarDays className="h-4 w-4" />} label="Recent upload" value={formatDate(metrics?.recentUploadDate)} />
+                  </div>
+                </div>
+              </div>
+            </KitSection>
+
+            <KitSection title="Brand Partnership Track Record" icon={<Award className="h-5 w-5" />} className="mt-5">
+              <div className="grid gap-4 md:grid-cols-3">
+                <MiniStatCard icon={<Award className="h-4 w-4" />} label="Sponsored videos" value={sponsorship?.sponsoredVideosDetected || 0} />
+                <MiniStatCard icon={<BarChart3 className="h-4 w-4" />} label="Sponsorship frequency" value={`${sponsorship?.sponsorshipFrequency || 0}%`} />
+                <MiniStatCard icon={<CheckCircle2 className="h-4 w-4" />} label="Collaboration readiness" value={sponsorship?.collaborationReadiness || "Emerging"} />
+              </div>
+              {(sponsorship?.recentSponsors || []).length ? (
+                <div className="mt-5">
+                  <p className="mb-3 text-xs font-bold uppercase text-[#9a8a73]">Past brand partners</p>
+                  <div className="flex flex-wrap gap-2">
+                    {(sponsorship?.recentSponsors || []).map((brand) => <Pill key={brand}>{brand}</Pill>)}
+                  </div>
+                </div>
+              ) : null}
+            </KitSection>
+
+            <section className="mt-5 rounded-[26px] bg-gradient-to-br from-[#201404] via-[#3d2707] to-[#6b4208] p-6 text-white shadow-sm">
+              <div className="mb-6 flex items-center gap-2">
+                <ShieldCheck className="h-5 w-5 text-[#facc15]" />
+                <h4 className="text-[18px] font-bold">Safety & Authenticity</h4>
+              </div>
+              <div className="grid gap-5 md:grid-cols-3">
+                <div className="text-center">
+                  <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-full border-[7px] border-[#facc15] text-2xl font-black">{safety?.score || scores?.brandSafetyScore || 0}</div>
+                  <p className="mt-3 text-sm text-white/75">Brand Safety Score</p>
+                </div>
+                <div className="text-center">
+                  <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-full border-[7px] border-[#f59e0b] text-2xl font-black">{scores?.authenticityScore || 0}</div>
+                  <p className="mt-3 text-sm text-white/75">Authenticity Score</p>
+                </div>
+                <div className="text-center">
+                  <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-full border-[7px] border-[#22c55e] text-xl font-black">{safety?.riskLevel || "Low"}</div>
+                  <p className="mt-3 text-sm text-white/75">Risk Level</p>
+                </div>
+              </div>
+              <div className="mt-6 rounded-[16px] border border-white/10 bg-white/10 p-4 text-sm text-white/85">
+                {(safety?.flags || []).length ? safety?.flags?.join(" · ") : "No major concern detected"}
+              </div>
+            </section>
+
+            <KitSection title="Proof of Performance" icon={<BarChart3 className="h-5 w-5" />} className="mt-5">
+              <div className="divide-y divide-[#f1e2c2]">
+                {(topVideos || []).slice(0, 5).map((video) => (
+                  <div key={video.title} className="grid grid-cols-[1fr_100px_100px] items-center gap-3 py-3 text-sm">
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#fff3c4] text-[#9a6500]"><PlayCircle className="h-4 w-4" /></span>
+                      <span className="line-clamp-1 font-medium text-black">{video.title}</span>
                     </div>
+                    <span className="font-semibold text-black">{formatNumber(video.views)}</span>
+                    <span className="rounded-full bg-[#dcfce7] px-2 py-1 text-center text-xs font-semibold text-[#166534]">High</span>
                   </div>
                 ))}
               </div>
-            )}
+            </KitSection>
+
+            <section className="mt-5 rounded-[26px] bg-gradient-to-br from-[#7c4a03] via-[#d97706] to-[#facc15] p-6 text-white shadow-sm">
+              <div className="grid gap-6 md:grid-cols-[1fr_1fr]">
+                <div>
+                  <div className="flex items-center gap-2"><TrendingUp className="h-5 w-5" /><h4 className="text-[18px] font-bold">Predicted Campaign Impact</h4></div>
+                  <p className="mt-5 text-[30px] font-black">{formatNumber(prediction?.expectedViewsLow)} - {formatNumber(prediction?.expectedViewsHigh)}</p>
+                  <p className="text-sm text-white/80">Predicted views based on recent performance</p>
+                  <p className="mt-5 text-[26px] font-black">{formatNumber(prediction?.expectedEngagementLow)} - {formatNumber(prediction?.expectedEngagementHigh)}</p>
+                  <p className="text-sm text-white/80">Predicted engagements</p>
+                </div>
+                <div>
+                  <p className="mb-3 text-xs font-bold uppercase tracking-wide text-white/75">Recommended deliverables</p>
+                  <div className="space-y-2">
+                    {(prediction?.recommendedDeliverables || []).map((item) => (
+                      <div key={item} className="flex items-center gap-2 text-sm"><CheckCircle2 className="h-4 w-4" /> {item}</div>
+                    ))}
+                  </div>
+                  <div className="mt-6 rounded-[16px] bg-white/15 p-4">
+                    <p className="text-xs uppercase text-white/70">Budget fit for this creator</p>
+                    <p className="mt-1 text-xl font-bold">{prediction?.budgetFit || "Medium"}</p>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            {hasContact ? (
+              <KitSection title="Contact & Actions" icon={<Lock className="h-5 w-5" />} className="mt-5">
+                <div className="rounded-[18px] border border-[#f1e2c2] bg-[#fffaf0] p-4">
+                  {contact?.maskedEmail ? (
+                    <div className="flex items-center gap-3 text-sm font-semibold text-black"><Mail className="h-4 w-4 text-[#9a6500]" /> {contact.maskedEmail}</div>
+                  ) : null}
+                  {contact?.website ? (
+                    <div className="mt-3 flex items-center gap-3 break-all text-sm font-semibold text-black"><Globe className="h-4 w-4 text-[#9a6500]" /> {contact.website}</div>
+                  ) : null}
+                  {(contact?.socialLinks || []).length ? (
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {(contact?.socialLinks || []).map((link) => <Pill key={`${link.platform}-${link.url}`}>{link.platform}</Pill>)}
+                    </div>
+                  ) : null}
+                </div>
+                <div className="mt-4 flex flex-wrap gap-3">
+                  <button className="rounded-xl bg-[#d97706] px-5 py-3 text-sm font-bold text-white">Unlock Contact</button>
+                  <button className="rounded-xl border border-[#d9b56d] bg-white px-5 py-3 text-sm font-bold text-black">Add to Campaign</button>
+                  <button className="rounded-xl border border-[#d9b56d] bg-white px-5 py-3 text-sm font-bold text-black">Invite Creator</button>
+                </div>
+              </KitSection>
+            ) : null}
           </div>
-        </div>
+        ) : null}
       </div>
     </div>
   );
@@ -1667,6 +1928,7 @@ export default function YouTubeBrowse() {
         creator={selectedCreator}
         open={Boolean(selectedCreator)}
         onClose={() => setSelectedCreator(null)}
+        filters={filters}
       />
     </div>
   );

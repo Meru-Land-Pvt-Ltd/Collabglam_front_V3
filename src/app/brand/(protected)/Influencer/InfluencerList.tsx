@@ -237,11 +237,11 @@ const normalizePaymentType = (raw?: string | null): PaymentType => {
 
 function getTabFromPath(pathname: string | null): Tab {
   const p = pathname ?? "";
-  if (p.includes("/brand/influ/applied")) return "applied";
-  if (p.includes("/brand/influ/shortlisted")) return "shortlisted";
-  if (p.includes("/brand/influ/active")) return "active";
-  if (p.includes("/brand/influ/undecided")) return "undecided";
-  if (p.includes("/brand/influ/rejected")) return "rejected";
+  if (p.includes("/brand/influencer/applied")) return "applied";
+  if (p.includes("/brand/influencer/shortlisted")) return "shortlisted";
+  if (p.includes("/brand/influencer/active")) return "active";
+  if (p.includes("/brand/influencer/undecided")) return "undecided";
+  if (p.includes("/brand/influencer/rejected")) return "rejected";
   return "all";
 }
 
@@ -718,7 +718,7 @@ function ActionButtons({
         <div
           ref={menuRef}
           style={{ top: menuPosition.top, left: menuPosition.left }}
-          className="fixed z-[99999] w-56 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-2xl"
+          className="fixed z-[99999] w-56 overflow-hidden rounded-m border border-gray-200 bg-white shadow-2xl"
           onClick={(e) => e.stopPropagation()}
         >
           <button
@@ -732,7 +732,7 @@ function ActionButtons({
             className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-medium text-gray-800 hover:bg-gray-50"
           >
             <FileArrowUp size={15} />
-            Upload Own Contract
+            Upload Contract
           </button>
 
           <button
@@ -2214,7 +2214,7 @@ export default function InfluencerList() {
       );
 
       const targetTab = actionToTab[action];
-      if (targetTab) router.push(`/brand/influ/${targetTab}?campaignId=${campaignId}`);
+      if (targetTab) router.push(`/brand/influencer/${targetTab}?campaignId=${campaignId}`);
     } catch (e) {
       alert(getApiErrorMessage(e, "Failed to update applicant status"));
     } finally {
@@ -2627,7 +2627,7 @@ export default function InfluencerList() {
       }
 
       router.push(
-        `/brand/influ/view-milestone?contractId=${encodeURIComponent(meta.contractId)}&campaignId=${encodeURIComponent(campaignId)}&influencerId=${encodeURIComponent(influencerId)}&brandId=${encodeURIComponent(brandId || "")}`
+        `/brand/influencer/view-milestone?contractId=${encodeURIComponent(meta.contractId)}&campaignId=${encodeURIComponent(campaignId)}&influencerId=${encodeURIComponent(influencerId)}&brandId=${encodeURIComponent(brandId || "")}`
       );
     },
     [campaignId, brandId, contractMetaMap, router, isAdminCreatedCampaign]

@@ -3,7 +3,6 @@
 import * as React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  YoutubeLogo,
   FileMinus,
   Users as UsersIcon,
   PaperPlaneTilt,
@@ -53,6 +52,8 @@ export type ListCardProps = {
   secondaryText?: string;
   className?: string;
 
+  onClick?: () => void;
+
   disabled?: boolean;
   disabledTitle?: string;
   overlayLabel?: string;
@@ -66,8 +67,23 @@ export type ListCardViewProps = {
   className?: string;
 };
 
+function YoutubePlatformIcon() {
+  return (
+    <span
+      aria-hidden="true"
+      className="inline-flex box-border h-[22px] w-[22px] aspect-square shrink-0 items-center justify-center gap-7 rounded-[40px] border border-[#E6E6E6] bg-white px-[7px] py-[8px]"
+    >
+      <img
+        src="/logos_youtube-icon.svg"
+        alt=""
+        className="h-full w-full object-contain"
+        draggable={false}
+      />
+    </span>
+  );
+}
 export const MetricIcons = {
-  Platform: <YoutubeLogo size={16} weight="regular" />,
+  Platform: <YoutubePlatformIcon />,
   Contract: <FileMinus size={16} weight="regular" />,
   Influencer: <UsersIcon size={16} weight="regular" />,
   Email: <PaperPlaneTilt size={16} weight="regular" />,
@@ -172,7 +188,7 @@ function MetricItem({ id, label, value, icon }: ListCardMetric) {
 
       <div className="flex min-w-0 items-center justify-center gap-2 max-[520px]:gap-1.5">
         {iconNode ? (
-          <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center text-muted-foreground max-[520px]:scale-90">
+          <span className="inline-flex shrink-0 items-center justify-center text-muted-foreground">
             {iconNode}
           </span>
         ) : null}
@@ -226,6 +242,7 @@ export function ListCard({
   onMoreClick,
   secondaryText,
   className,
+  onClick,
   disabled = false,
   disabledTitle,
   overlayLabel,
@@ -285,11 +302,45 @@ export function ListCard({
     return categoryTag ? [categoryTag] : [];
   }, [badges, categoryTag]);
 
+  const isClickable = Boolean(onClick) && !disabled;
+
+  const isInnerInteractive = (target: EventTarget | null) => {
+    if (!(target instanceof HTMLElement)) return false;
+
+    return Boolean(
+      target.closest(
+        "button,a,input,textarea,select,label,[role='button'],[data-no-card-click='true']"
+      )
+    );
+  };
+
+  const handleCardClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!isClickable || isInnerInteractive(e.target)) return;
+    onClick?.();
+  };
+
+  const handleCardKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!isClickable) return;
+    if (e.key !== "Enter" && e.key !== " ") return;
+    if (isInnerInteractive(e.target)) return;
+
+    e.preventDefault();
+    onClick?.();
+  };
+
   return (
     <div
-      className={cx("relative", disabled ? "cursor-pointer" : "")}
+      className={cx(
+        "relative",
+        disabled ? "cursor-pointer" : "",
+        isClickable && "cursor-pointer"
+      )}
       title={disabled ? disabledTitle : undefined}
       aria-disabled={disabled || undefined}
+      role={isClickable ? "link" : undefined}
+      tabIndex={isClickable ? 0 : undefined}
+      onClick={handleCardClick}
+      onKeyDown={handleCardKeyDown}
     >
       <div
         className={cx(

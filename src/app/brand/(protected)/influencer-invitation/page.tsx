@@ -903,6 +903,121 @@ function CreatorAvatar({ creator, name }: { creator: Creator; name: string }) {
   );
 }
 
+
+const INVITE_LOADING_ANIMALS = ["🎥", "🤝", "📊", "🎯", "✨", "🔎"];
+const INVITE_LOADING_BACKGROUNDS = ["🎥", "🤝", "📊", "🎯", "✨", "🔎"];
+
+function InviteCreatorLoadingAnimation() {
+  const messages = React.useMemo(
+    () => [
+      "Hold on, we are searching the right YouTube creators.",
+      "Our AI scout is checking creator activity and fit.",
+      "Matching campaign category, country, and influencer tier.",
+      "Reviewing audience authenticity and brand-safety signals.",
+      "Filtering weak matches so your shortlist stays clean.",
+      "Almost ready — preparing creators you can invite.",
+    ],
+    []
+  );
+
+  const [frameIndex, setFrameIndex] = React.useState(0);
+  const [messageIndex, setMessageIndex] = React.useState(0);
+
+  React.useEffect(() => {
+    const timer = window.setInterval(() => {
+      setFrameIndex((current) =>
+        (current + 1) % Math.max(INVITE_LOADING_ANIMALS.length, INVITE_LOADING_BACKGROUNDS.length)
+      );
+    }, 1050);
+
+    return () => window.clearInterval(timer);
+  }, []);
+
+  React.useEffect(() => {
+    const timer = window.setInterval(() => {
+      setMessageIndex((current) => (current + 1) % messages.length);
+    }, 2300);
+
+    return () => window.clearInterval(timer);
+  }, [messages.length]);
+
+  const activeAnimal = INVITE_LOADING_ANIMALS[frameIndex % INVITE_LOADING_ANIMALS.length] || "🦊";
+  const activeBackground = INVITE_LOADING_BACKGROUNDS[frameIndex % INVITE_LOADING_BACKGROUNDS.length] || "✨";
+  const activeMessage = messages[messageIndex] || messages[0];
+
+  return (
+    <div className="grid min-h-[360px] place-items-center px-6 py-10 text-center">
+      <style jsx global>{`
+        @keyframes cgInviteAiOrbit {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+
+        @keyframes cgInviteAiPulse {
+          0%, 100% { transform: scale(0.96); opacity: 0.55; }
+          50% { transform: scale(1.08); opacity: 0.85; }
+        }
+
+        @keyframes cgInviteAiFloat {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-10px); }
+        }
+
+        @keyframes cgInviteAiScan {
+          0% { transform: translateX(-82px); opacity: 0; }
+          18%, 82% { opacity: 0.55; }
+          100% { transform: translateX(82px); opacity: 0; }
+        }
+
+        @keyframes cgInviteAiTextFade {
+          0% { opacity: 0; transform: translateY(6px); }
+          18%, 82% { opacity: 1; transform: translateY(0); }
+          100% { opacity: 0; transform: translateY(-6px); }
+        }
+      `}</style>
+
+      <div className="flex max-w-[660px] flex-col items-center justify-center">
+        <div className="relative mb-7 h-[178px] w-[178px]">
+          <div className="absolute inset-0 rounded-full bg-gradient-to-br from-[#fff7d8] via-[#f8f4ea] to-white shadow-[0_20px_60px_rgba(25,20,10,0.10)]" />
+          <div className="absolute inset-[14px] rounded-full border border-[#ead9b5] bg-white/80" style={{ animation: "cgInviteAiPulse 2.2s ease-in-out infinite" }} />
+          <div className="absolute inset-[28px] rounded-full bg-[#fff8e6]" />
+
+          <div className="absolute inset-0" style={{ animation: "cgInviteAiOrbit 5.4s linear infinite" }}>
+            <span className="absolute left-1/2 top-0 h-3 w-3 -translate-x-1/2 rounded-full bg-[#d29b22] shadow-[0_0_16px_rgba(210,155,34,0.45)]" />
+            <span className="absolute bottom-5 left-4 h-2.5 w-2.5 rounded-full bg-[#4f8f5f] shadow-[0_0_16px_rgba(79,143,95,0.35)]" />
+            <span className="absolute bottom-5 right-4 h-2.5 w-2.5 rounded-full bg-[#c06f3d] shadow-[0_0_16px_rgba(192,111,61,0.35)]" />
+          </div>
+
+          <div className="absolute inset-[44px] overflow-hidden rounded-[32px] border border-[#ead7ad] bg-white shadow-[0_16px_35px_rgba(20,15,5,0.10)]" style={{ animation: "cgInviteAiFloat 2.4s ease-in-out infinite" }}>
+            <div className="absolute inset-0 grid place-items-center text-[64px] opacity-[0.12] transition-all duration-500">
+              <span key={activeBackground}>{activeBackground}</span>
+            </div>
+            <div className="absolute inset-0 bg-gradient-to-b from-white/20 via-transparent to-[#fff3c5]/50" />
+            <div className="absolute left-1/2 top-0 h-full w-[2px] bg-[#d39c27]/55 shadow-[0_0_18px_rgba(211,156,39,0.45)]" style={{ animation: "cgInviteAiScan 1.7s ease-in-out infinite" }} />
+            <div className="absolute inset-0 grid place-items-center text-[54px] transition-all duration-500">
+              <span key={activeAnimal}>{activeAnimal}</span>
+            </div>
+          </div>
+        </div>
+
+        <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-[#a98634]">
+          CollabGlam AI discovery
+        </p>
+        <h3 className="mt-3 text-[24px] font-semibold text-gray-950">
+          Finding creators for your campaign
+        </h3>
+        <p
+          key={messageIndex}
+          className="mx-auto mt-3 max-w-[560px] text-[15px] leading-6 text-[#71685c]"
+          style={{ animation: "cgInviteAiTextFade 2.25s ease-in-out both" }}
+        >
+          {activeMessage}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function rowId(c: Creator, index: number) {
   const modashId = getCreatorModashId(c);
   const platform = getCreatorPlatform(c);
@@ -1012,74 +1127,6 @@ function getStoredBrandMongoId() {
     window.localStorage.getItem("currentBrandId") ||
     ""
   );
-}
-
-
-const INVITE_PAGE_CACHE_PREFIX = "collabglam:invite-page-creators";
-const INVITE_PAGE_CACHE_TTL_MS = 2 * 60 * 60 * 1000;
-
-type InvitePageCachePayload = {
-  campaignId: string;
-  creators: Creator[];
-  selectedKeys: string[];
-  alreadyInvitedKeys: string[];
-  savedAt: number;
-};
-
-function getInvitePageCacheKey(campaignId?: string | null) {
-  const id = String(campaignId || "").trim();
-  return id ? `${INVITE_PAGE_CACHE_PREFIX}:${id}` : "";
-}
-
-function readInvitePageCache(campaignId?: string | null) {
-  if (typeof window === "undefined") return null;
-
-  const key = getInvitePageCacheKey(campaignId);
-  if (!key) return null;
-
-  try {
-    const raw = window.sessionStorage.getItem(key);
-    if (!raw) return null;
-
-    const parsed = JSON.parse(raw) as InvitePageCachePayload;
-    if (!parsed || !Array.isArray(parsed.creators)) return null;
-
-    const savedAt = Number(parsed.savedAt || 0);
-    if (!savedAt || Date.now() - savedAt > INVITE_PAGE_CACHE_TTL_MS) {
-      window.sessionStorage.removeItem(key);
-      return null;
-    }
-
-    return parsed;
-  } catch (_) {
-    return null;
-  }
-}
-
-function writeInvitePageCache(
-  campaignId: string | null | undefined,
-  creators: Creator[],
-  selectedKeys: Set<string>,
-  alreadyInvitedKeys: Set<string>
-) {
-  if (typeof window === "undefined") return;
-
-  const key = getInvitePageCacheKey(campaignId);
-  if (!key) return;
-
-  try {
-    const payload: InvitePageCachePayload = {
-      campaignId: String(campaignId || ""),
-      creators,
-      selectedKeys: Array.from(selectedKeys),
-      alreadyInvitedKeys: Array.from(alreadyInvitedKeys),
-      savedAt: Date.now(),
-    };
-
-    window.sessionStorage.setItem(key, JSON.stringify(payload));
-  } catch (_) {
-    // Session cache is only for navigation restore. Ignore storage failures.
-  }
 }
 
 function getCreatorAudienceAuthenticity(c: Creator) {
@@ -1374,19 +1421,8 @@ export default function InfluencerInvitationPage() {
   );
 
   const fetchCreators = React.useCallback(async () => {
-    setError(null);
-
-    const cached = readInvitePageCache(campaignId);
-    if (cached) {
-      setCreators(cached.creators);
-      setSelected(new Set(cached.selectedKeys || []));
-      setAlreadyInvited(new Set(cached.alreadyInvitedKeys || []));
-      setSending(new Set());
-      setLoading(false);
-      return;
-    }
-
     setLoading(true);
+    setError(null);
 
     try {
       const brandId = getStoredBrandMongoId();
@@ -1440,7 +1476,6 @@ export default function InfluencerInvitationPage() {
       setAlreadyInvited(existingKeys);
       setSelected(defaultSelected);
       setSending(new Set());
-      writeInvitePageCache(campaignId, list, defaultSelected, existingKeys);
     } catch (e: any) {
       const message = await getApiErrorMessage(e, "Failed to load creators");
 
@@ -1463,11 +1498,6 @@ export default function InfluencerInvitationPage() {
   React.useEffect(() => {
     fetchCreators();
   }, [fetchCreators]);
-
-  React.useEffect(() => {
-    if (loading || !campaignId || !creators.length) return;
-    writeInvitePageCache(campaignId, creators, selected, alreadyInvited);
-  }, [alreadyInvited, campaignId, creators, loading, selected]);
 
   const createInvitationForCreator = React.useCallback(
     async (
@@ -1994,28 +2024,7 @@ export default function InfluencerInvitationPage() {
         <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg bg-transparent">
           <div className="min-h-0 flex-1 overflow-y-auto px-1 py-1">
             {loading ? (
-              <>
-                {Array.from({ length: 8 }).map((_, i) => (
-                  <div
-                    key={i}
-                    className="relative mx-2 my-1 rounded-lg bg-white/42 backdrop-blur-[1px] after:absolute after:bottom-0 after:left-5 after:right-5 after:h-px after:bg-black/5 after:content-[''] last:after:hidden"
-                  >
-                    <div className="flex min-h-[104px] items-center justify-between gap-5 px-6 py-5">
-                      <div className="flex min-w-0 items-start gap-4">
-                        <div className="h-14 w-14 shrink-0 animate-pulse rounded-full bg-gray-200" />
-
-                        <div className="min-w-0 space-y-2 pt-1">
-                          <div className="h-5 w-44 animate-pulse rounded bg-gray-200" />
-                          <div className="h-4 w-80 max-w-full animate-pulse rounded bg-gray-100" />
-                          <div className="h-4 w-[420px] max-w-full animate-pulse rounded bg-gray-100" />
-                        </div>
-                      </div>
-
-                      <div className="h-10 w-24 shrink-0 animate-pulse rounded-full bg-gray-200" />
-                    </div>
-                  </div>
-                ))}
-              </>
+              <InviteCreatorLoadingAnimation />
             ) : (
               <>
                 {creators.map((c, index) => {
@@ -2036,7 +2045,6 @@ export default function InfluencerInvitationPage() {
                       onClick={() => {
                         const mediaKitHref = buildCreatorMediaKitHref(c, campaignId);
                         if (isYouTubeCreator(c) && mediaKitHref) {
-                          writeInvitePageCache(campaignId, creators, selected, alreadyInvited);
                           router.push(mediaKitHref);
                           return;
                         }
@@ -2048,7 +2056,6 @@ export default function InfluencerInvitationPage() {
                           event.preventDefault();
                           const mediaKitHref = buildCreatorMediaKitHref(c, campaignId);
                           if (isYouTubeCreator(c) && mediaKitHref) {
-                            writeInvitePageCache(campaignId, creators, selected, alreadyInvited);
                             router.push(mediaKitHref);
                             return;
                           }

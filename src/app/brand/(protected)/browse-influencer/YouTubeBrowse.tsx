@@ -242,7 +242,7 @@ type CountryOption = {
 };
 
 function getRuntimeApiBaseUrl() {
-  const explicit = String(process.env.NEXT_PUBLIC_API_BASE_URL || "").trim();
+  const explicit = String(process.env.NEXT_PUBLIC_API_URL || "").trim();
   if (explicit) return explicit;
 
   if (typeof window !== "undefined") {
@@ -482,7 +482,10 @@ function VideoThumbnail({ src, title }: { src?: string; title?: string }) {
 }
 
 
-const DEFAULT_CAMPAIGN_LOADING_BACKGROUNDS = ["🎥", "🎯", "🤝", "📊", "✨", "🔍"];
+
+const LOADING_ANIMALS = ["💻", "📱", "⚡", "🤖", "🎧", "🔍"];
+
+const DEFAULT_CAMPAIGN_LOADING_BACKGROUNDS = ["✨", "🎯", "🤝", "📊", "🔎", "⚡"];
 
 function getCampaignLoadingBackgrounds(topic?: string) {
   const value = String(topic || "").toLowerCase();
@@ -517,11 +520,11 @@ function getCampaignLoadingBackgrounds(topic?: string) {
 function getCreatorSearchLoadingMessages(topicLabel: string) {
   return [
     `Hold on, we are searching creators for ${topicLabel}.`,
-    "Scanning YouTube channels and creator signals.",
-    "Checking recent uploads and audience authenticity.",
-    "Matching tier, country, and campaign relevance.",
-    "Filtering creators with stronger brand fit.",
-    "Almost ready — polishing your creator shortlist.",
+    "Our AI scout is sniffing out matching YouTube creators.",
+    "Checking recent uploads, authenticity, and brand fit.",
+    "Matching country, creator tier, and campaign signals.",
+    "Filtering out weak matches so your shortlist stays useful.",
+    "Almost ready — preparing your creator recommendations.",
   ];
 }
 
@@ -529,13 +532,13 @@ function CreatorSearchLoader({ topic }: { topic?: string }) {
   const backgrounds = useMemo(() => getCampaignLoadingBackgrounds(topic), [topic]);
   const topicLabel = String(topic || "your campaign").trim() || "your campaign";
   const messages = useMemo(() => getCreatorSearchLoadingMessages(topicLabel), [topicLabel]);
-  const [backgroundIndex, setBackgroundIndex] = useState(0);
+  const [frameIndex, setFrameIndex] = useState(0);
   const [messageIndex, setMessageIndex] = useState(0);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
-      setBackgroundIndex((current) => (current + 1) % backgrounds.length);
-    }, 950);
+      setFrameIndex((current) => (current + 1) % Math.max(backgrounds.length, LOADING_ANIMALS.length));
+    }, 1050);
 
     return () => window.clearInterval(timer);
   }, [backgrounds.length]);
@@ -543,107 +546,79 @@ function CreatorSearchLoader({ topic }: { topic?: string }) {
   useEffect(() => {
     const timer = window.setInterval(() => {
       setMessageIndex((current) => (current + 1) % messages.length);
-    }, 1850);
+    }, 2300);
 
     return () => window.clearInterval(timer);
   }, [messages.length]);
 
-  const activeBackground = backgrounds[backgroundIndex] || "✨";
+  const activeBackground = backgrounds[frameIndex % backgrounds.length] || "✨";
+  const activeAnimal = LOADING_ANIMALS[frameIndex % LOADING_ANIMALS.length] || "🦊";
   const activeMessage = messages[messageIndex] || messages[0];
 
   return (
     <div className="px-6 py-20 text-center">
       <style jsx global>{`
-        @keyframes cgStaticMagnifierFloat {
-          0%, 100% {
-            transform: translateY(0) scale(1);
-          }
-          50% {
-            transform: translateY(-3px) scale(1.015);
-          }
+        @keyframes cgAiOrbit {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
         }
 
-        @keyframes cgStaticMagnifierScan {
-          0% {
-            transform: translateX(-108px);
-            opacity: 0;
-          }
-          15% {
-            opacity: 0.75;
-          }
-          85% {
-            opacity: 0.75;
-          }
-          100% {
-            transform: translateX(108px);
-            opacity: 0;
-          }
+        @keyframes cgAiPulse {
+          0%, 100% { transform: scale(0.96); opacity: 0.55; }
+          50% { transform: scale(1.08); opacity: 0.85; }
         }
 
-        @keyframes cgStaticMagnifierGlow {
-          0%, 100% {
-            opacity: 0.28;
-            transform: scale(0.94);
-          }
-          50% {
-            opacity: 0.48;
-            transform: scale(1.08);
-          }
+        @keyframes cgAiFloat {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-10px); }
         }
 
-        @keyframes cgLoaderTextFade {
-          0% {
-            opacity: 0;
-            transform: translateY(5px);
-          }
-          18%, 82% {
-            opacity: 1;
-            transform: translateY(0);
-          }
-          100% {
-            opacity: 0;
-            transform: translateY(-4px);
-          }
+        @keyframes cgAiScan {
+          0% { transform: translateX(-82px); opacity: 0; }
+          18%, 82% { opacity: 0.55; }
+          100% { transform: translateX(82px); opacity: 0; }
+        }
+
+        @keyframes cgAiTextFade {
+          0% { opacity: 0; transform: translateY(6px); }
+          18%, 82% { opacity: 1; transform: translateY(0); }
+          100% { opacity: 0; transform: translateY(-6px); }
         }
       `}</style>
 
-      <div className="mx-auto flex min-h-[270px] max-w-[760px] flex-col items-center justify-center">
-        <div className="relative mb-8 h-[150px] w-[260px]">
-          <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-gradient-to-r from-transparent via-[#c9cbc9] to-transparent" />
-          <div className="absolute left-1/2 top-1/2 h-[126px] w-[126px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#e5e7e5] shadow-[0_18px_45px_rgba(0,0,0,0.12)]" />
-          <div
-            className="absolute left-1/2 top-1/2 h-[146px] w-[146px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#eef0ee]"
-            style={{ animation: "cgStaticMagnifierGlow 1.8s ease-in-out infinite" }}
-          />
+      <div className="mx-auto flex min-h-[300px] max-w-[760px] flex-col items-center justify-center">
+        <div className="relative mb-7 h-[178px] w-[178px]">
+          <div className="absolute inset-0 rounded-full bg-gradient-to-br from-[#fff7d8] via-[#f8f4ea] to-white shadow-[0_20px_60px_rgba(25,20,10,0.10)]" />
+          <div className="absolute inset-[14px] rounded-full border border-[#ead9b5] bg-white/80" style={{ animation: "cgAiPulse 2.2s ease-in-out infinite" }} />
+          <div className="absolute inset-[28px] rounded-full bg-[#fff8e6]" />
 
-          <div
-            className="absolute left-1/2 top-1/2 h-[110px] w-[110px] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-full border border-[#d7dad7] bg-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.6)]"
-            style={{ animation: "cgStaticMagnifierFloat 1.7s ease-in-out infinite" }}
-          >
-            <div className="absolute inset-0 grid place-items-center text-[56px] opacity-[0.14] transition-all duration-500">
-              <span key={activeBackground}>{activeBackground}</span>
-            </div>
-
-            <div className="absolute left-1/2 top-1/2 h-[74px] w-[74px] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-[#dfe1df] bg-[#f7f8f7]/86" />
-
-            <div className="absolute left-1/2 top-1/2 h-[78px] w-[1px] -translate-y-1/2 bg-[#9ea29e]/70 shadow-[0_0_18px_rgba(120,124,120,0.36)]" style={{ animation: "cgStaticMagnifierScan 1.55s ease-in-out infinite" }} />
-
-            <Search className="absolute left-1/2 top-1/2 z-10 h-11 w-11 -translate-x-1/2 -translate-y-1/2 text-[#7b807b]" strokeWidth={2.2} />
+          <div className="absolute inset-0" style={{ animation: "cgAiOrbit 5.4s linear infinite" }}>
+            <span className="absolute left-1/2 top-0 h-3 w-3 -translate-x-1/2 rounded-full bg-[#d29b22] shadow-[0_0_16px_rgba(210,155,34,0.45)]" />
+            <span className="absolute bottom-5 left-4 h-2.5 w-2.5 rounded-full bg-[#4f8f5f] shadow-[0_0_16px_rgba(79,143,95,0.35)]" />
+            <span className="absolute bottom-5 right-4 h-2.5 w-2.5 rounded-full bg-[#c06f3d] shadow-[0_0_16px_rgba(192,111,61,0.35)]" />
           </div>
 
-          <span className="absolute left-[calc(50%+34px)] top-[calc(50%+38px)] h-[46px] w-[10px] rotate-[-45deg] rounded-full bg-[#7b807b] shadow-[0_8px_16px_rgba(0,0,0,0.12)]" />
+          <div className="absolute inset-[44px] overflow-hidden rounded-[32px] border border-[#ead7ad] bg-white shadow-[0_16px_35px_rgba(20,15,5,0.10)]" style={{ animation: "cgAiFloat 2.4s ease-in-out infinite" }}>
+            <div className="absolute inset-0 grid place-items-center text-[64px] opacity-[0.12] transition-all duration-500">
+              <span key={activeBackground}>{activeBackground}</span>
+            </div>
+            <div className="absolute inset-0 bg-gradient-to-b from-white/20 via-transparent to-[#fff3c5]/50" />
+            <div className="absolute left-1/2 top-0 h-full w-[2px] bg-[#d39c27]/55 shadow-[0_0_18px_rgba(211,156,39,0.45)]" style={{ animation: "cgAiScan 1.7s ease-in-out infinite" }} />
+            <div className="absolute inset-0 grid place-items-center text-[54px] transition-all duration-500">
+              <span key={activeAnimal}>{activeAnimal}</span>
+            </div>
+          </div>
         </div>
 
-        <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-[#9a907f]">
-          CollabGlam discovery engine
-        </p>
+      
+      
         <h3 className="mt-3 text-[22px] font-semibold text-black">
           Finding creators for {topicLabel}
         </h3>
         <p
           key={messageIndex}
-          className="mx-auto mt-3 max-w-[520px] text-sm leading-6 text-[#71685c]"
-          style={{ animation: "cgLoaderTextFade 1.85s ease-in-out both" }}
+          className="mx-auto mt-3 max-w-[560px] text-sm leading-6 text-[#71685c]"
+          style={{ animation: "cgAiTextFade 2.25s ease-in-out both" }}
         >
           {activeMessage}
         </p>
@@ -1895,7 +1870,9 @@ export default function YouTubeBrowse() {
                       <h3 className="mt-1 text-[22px] font-bold text-black">
                         Refine YouTube creators
                       </h3>
-                    
+                      <p className="mt-1 text-sm text-[#766b60]">
+                        Select tier and country from clean dropdowns. Country sends the country code in API payload.
+                      </p>
                     </div>
                     <button
                       type="button"

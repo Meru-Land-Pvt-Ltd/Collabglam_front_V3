@@ -234,11 +234,33 @@ type Filters = {
   limit: number;
 };
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+function getRuntimeApiBaseUrl() {
+  const explicit = String(process.env.NEXT_PUBLIC_API_BASE_URL || "").trim();
+  if (explicit) return explicit;
+
+  if (typeof window !== "undefined") {
+    const host = window.location.hostname;
+    if (host === "localhost" || host === "127.0.0.1") {
+      return "http://localhost:8000";
+    }
+
+    return window.location.origin;
+  }
+
+  return "http://localhost:8000";
+}
+
+const API_BASE_URL = getRuntimeApiBaseUrl();
 
 const FRONTEND_PAGE_SIZE = 25;
 const DISCOVERY_FETCH_LIMIT = 100;
+const BROWSE_MIN_RESULTS = 50;
+const BROWSE_POLL_DELAY_MS = 4500;
+const BROWSE_MAX_POLLS = 8;
+
+function wait(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
 
 const defaultFilters: Filters = {
   keyword: "",
@@ -365,6 +387,11 @@ const allowedParams = [
   "limit",
   "campaignId",
   "frontendPagination",
+  "fast",
+  "background",
+  "nonBlocking",
+  "forceBackground",
+  "minimumResults",
 ];
 
 function getApiUrl(path: string) {
@@ -1497,20 +1524,47 @@ export default function YouTubeBrowse() {
       setWarning("");
       setFrontendPage(1);
 
-      const response = await fetchYouTubeCreators(
-        {
-          ...filters,
-          ...nextFilters,
-          page: 1,
-          limit: DISCOVERY_FETCH_LIMIT,
-          frontendPagination: true,
-        },
-        campaignId,
-      );
+      let pollCount = 0;
+      let lastResponse: any = null;
 
-      const fetchedCreators = Array.isArray(response.data) ? response.data : [];
-      setAllCreators(fetchedCreators);
-      setWarning(response.warning || "");
+      while (true) {
+        const response = await fetchYouTubeCreators(
+          {
+            ...filters,
+            ...nextFilters,
+            page: 1,
+            limit: DISCOVERY_FETCH_LIMIT,
+            frontendPagination: true,
+            fast: true,
+            background: true,
+            minimumResults: BROWSE_MIN_RESULTS,
+          },
+          campaignId,
+        );
+
+        lastResponse = response;
+        const fetchedCreators = Array.isArray(response.data) ? response.data : [];
+        setAllCreators(fetchedCreators);
+
+        const shouldKeepPolling =
+          Boolean(response.processing) &&
+          fetchedCreators.length < BROWSE_MIN_RESULTS &&
+          pollCount < BROWSE_MAX_POLLS;
+
+        if (!shouldKeepPolling) break;
+
+        setWarning(
+          response.warning ||
+            `Hold on, we are still searching creators... ${fetchedCreators.length}/${BROWSE_MIN_RESULTS} found`,
+        );
+
+        pollCount += 1;
+        await wait(BROWSE_POLL_DELAY_MS);
+      }
+
+      const finalCreators = Array.isArray(lastResponse?.data) ? lastResponse.data : [];
+      setAllCreators(finalCreators);
+      setWarning(lastResponse?.warning || "");
     } catch (err: any) {
       setAllCreators([]);
       setError(err?.message || "Failed to fetch");

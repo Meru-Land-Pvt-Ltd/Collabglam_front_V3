@@ -1178,6 +1178,7 @@ export default function InfluencerInvitationPage() {
   const fetchYouTubeCampaignRecommendations = React.useCallback(
     async (brandId: string, currentCampaignId: string) => {
       const url = `/youtube-data/campaign/${currentCampaignId}/recommend-influencers`;
+  
       const body = {
         brandId,
         campaignId: currentCampaignId,
@@ -1186,38 +1187,22 @@ export default function InfluencerInvitationPage() {
         minInfluencers: 50,
         save: true,
         strictCountry: true,
-        fast: true,
-        background: true,
+  
+        // Synchronous request:
+        // keep loader visible and wait for final correct creators.
+        // Do not return old cached/background rows first.
+        fast: false,
+        background: false,
+        forceBackground: false,
       };
-
-      const requestOnce = async (forceBackground = false) => {
-        const response = await api.post<RecommendedCreatorsResponse>(
-          url,
-          forceBackground ? { ...body, forceBackground: true } : body,
-          {
-            // Keep recommendation polling logic unchanged, but allow each API
-            // call to wait longer on production when Mongo/YouTube processing
-            // needs more time before returning the fast response.
-            timeout: 600000,
-          }
-        );
-
-        return response.data;
-      };
-
-      let data = await requestOnce();
-      let creators = getRecommendedCreators(data);
-
-      // If this is the first run for the campaign, backend returns processing=true
-      // while YouTube discovery is saving recommendations. Keep the page in
-      // loading state and poll until at least 50 creators are available.
-      for (let attempt = 0; attempt < 72 && creators.length < 50 && !Array.isArray(data) && data?.processing; attempt += 1) {
-        await wait(5000);
-        data = await requestOnce(attempt === 6);
-        creators = getRecommendedCreators(data);
-      }
-
-      return data;
+  
+      const response = await api.post<RecommendedCreatorsResponse>(url, body, {
+        // 6 minutes frontend timeout.
+        // Backend/Nginx should also be 360s or more.
+        timeout: 360000,
+      });
+  
+      return response.data;
     },
     []
   );
@@ -1827,6 +1812,23 @@ export default function InfluencerInvitationPage() {
           <div className="min-h-0 flex-1 overflow-y-auto px-1 py-1">
             {loading ? (
               <>
+                <div className="mx-2 mb-4 rounded-xl border border-gray-200 bg-white/75 px-6 py-5 text-center shadow-sm backdrop-blur-sm">
+                  <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-gray-100 text-xl">
+                    🔎
+                  </div>
+                  <h2 className="text-[18px] font-semibold text-gray-950">
+                    Finding best YouTube creators...
+                  </h2>
+                  <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-gray-600">
+                    We are searching YouTube, checking channel activity, matching country and tier,
+                    calculating authenticity, and preparing the final creator list. This can take up
+                    to 5 minutes.
+                  </p>
+                  <div className="mx-auto mt-4 h-2 max-w-md overflow-hidden rounded-full bg-gray-100">
+                    <div className="h-full w-1/2 animate-pulse rounded-full bg-gray-400" />
+                  </div>
+                </div>
+
                 {Array.from({ length: 8 }).map((_, i) => (
                   <div
                     key={i}

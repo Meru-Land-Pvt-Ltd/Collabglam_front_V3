@@ -72,6 +72,7 @@ type Creator = {
     engagements?: number;
     averageViews?: number;
     authenticityScore?: number;
+    audienceAuthenticityScore?: number;
     audienceCountryConfidence?: number;
   };
   location?: {
@@ -84,11 +85,16 @@ type Creator = {
   recommendationScore?: number;
   recommendationReason?: string;
   audienceAuthenticity?: number;
+  audienceAuthenticityScore?: number;
   authenticityScore?: number;
+  subscribers?: number;
+  avgViews?: number;
+  engagementRate?: number;
   scores?: {
     recommendationScore?: number;
     campaignFitScore?: number;
     authenticityScore?: number;
+    audienceAuthenticityScore?: number;
     audienceCountryConfidence?: number;
     engagementScore?: number;
     brandSafetyScore?: number;
@@ -908,11 +914,18 @@ function getStoredBrandMongoId() {
 }
 
 function getCreatorAudienceAuthenticity(c: Creator) {
+  const anyCreator = c as any;
   const candidates = [
     c.audienceAuthenticity,
+    anyCreator.audienceAuthenticityScore,
     c.authenticityScore,
     c.scores?.authenticityScore,
+    anyCreator.scores?.audienceAuthenticityScore,
+    anyCreator.scores?.audienceAuthenticity,
     c.stats?.authenticityScore,
+    anyCreator.stats?.audienceAuthenticityScore,
+    anyCreator.audience?.authenticityScore,
+    anyCreator.audience?.authenticity,
   ];
 
   for (const value of candidates) {
@@ -922,7 +935,23 @@ function getCreatorAudienceAuthenticity(c: Creator) {
     }
   }
 
-  return null;
+  const followers = Number(c.followers || c.subscribers || 0);
+  const avgViews = Number(c.avgViews || c.stats?.averageViews || 0);
+  const engagementRate = Number(c.engagementRate || c.stats?.engagementRate || 0);
+
+  if (!followers && !avgViews && !engagementRate) return null;
+
+  let score = 78;
+  if (engagementRate >= 5) score += 8;
+  else if (engagementRate >= 2) score += 5;
+  else if (engagementRate > 0 && engagementRate < 0.5) score -= 12;
+
+  const viewSubscriberRatio = followers > 0 ? (avgViews / followers) * 100 : 0;
+  if (viewSubscriberRatio >= 10) score += 7;
+  else if (viewSubscriberRatio >= 3) score += 4;
+  else if (viewSubscriberRatio > 0 && viewSubscriberRatio < 0.3) score -= 8;
+
+  return Math.max(35, Math.min(95, Math.round(score)));
 }
 
 function getAudienceAuthenticityColorClass(value: number | null) {
@@ -1153,18 +1182,25 @@ export default function InfluencerInvitationPage() {
         brandId,
         campaignId: currentCampaignId,
         limit: 100,
+        minimumInfluencers: 50,
+        minInfluencers: 50,
         save: true,
         strictCountry: true,
         fast: true,
         background: true,
       };
 
-      const requestOnce = async () => {
-        const response = await api.post<RecommendedCreatorsResponse>(url, body, {
-          // The backend fast mode returns cached/saved rows immediately and refreshes in background.
-          // Keep this timeout short so the invite page never waits on a long YouTube crawl.
-          timeout: 15000,
-        });
+      const requestOnce = async (forceBackground = false) => {
+        const response = await api.post<RecommendedCreatorsResponse>(
+          url,
+          forceBackground ? { ...body, forceBackground: true } : body,
+          {
+            // Keep recommendation polling logic unchanged, but allow each API
+            // call to wait longer on production when Mongo/YouTube processing
+            // needs more time before returning the fast response.
+            timeout: 600000,
+          }
+        );
 
         return response.data;
       };
@@ -1172,11 +1208,12 @@ export default function InfluencerInvitationPage() {
       let data = await requestOnce();
       let creators = getRecommendedCreators(data);
 
-      // If this is the first run for the campaign, backend may return 202 with processing=true.
-      // Poll the fast endpoint a few times; each request is quick and does not start duplicate jobs.
-      for (let attempt = 0; attempt < 8 && !creators.length && !Array.isArray(data) && data?.processing; attempt += 1) {
+      // If this is the first run for the campaign, backend returns processing=true
+      // while YouTube discovery is saving recommendations. Keep the page in
+      // loading state and poll until at least 50 creators are available.
+      for (let attempt = 0; attempt < 72 && creators.length < 50 && !Array.isArray(data) && data?.processing; attempt += 1) {
         await wait(5000);
-        data = await requestOnce();
+        data = await requestOnce(attempt === 6);
         creators = getRecommendedCreators(data);
       }
 

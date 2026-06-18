@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Award,
   BadgeCheck,
@@ -25,7 +25,6 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { DetailPanel } from "./DetailPanel";
 
 type CreatorScores = {
   sponsorshipScore?: number;
@@ -235,8 +234,15 @@ type Filters = {
   limit: number;
 };
 
+type CountryOption = {
+  _id?: string;
+  countryName: string;
+  countryCode: string;
+  flag?: string;
+};
+
 function getRuntimeApiBaseUrl() {
-  const explicit = String(process.env.NEXT_PUBLIC_API_URL || "").trim();
+  const explicit = String(process.env.NEXT_PUBLIC_API_BASE_URL || "").trim();
   if (explicit) return explicit;
 
   if (typeof window !== "undefined") {
@@ -789,6 +795,18 @@ function normalizeCountryCode(value?: string | number | null) {
   return String(value || "").trim().toUpperCase();
 }
 
+function getCountryDisplayName(countryCode: string, countries: CountryOption[]) {
+  const code = normalizeCountryCode(countryCode);
+  if (!code) return "Any country";
+
+  const country = countries.find(
+    (item) => normalizeCountryCode(item.countryCode) === code,
+  );
+
+  if (!country) return code;
+  return `${country.flag ? `${country.flag} ` : ""}${country.countryName} (${country.countryCode})`;
+}
+
 function getCreatorActualCountryCode(creator: YouTubeCreator) {
   return normalizeCountryCode(creator.country);
 }
@@ -903,6 +921,31 @@ async function fetchYouTubeCreators(
   return data;
 }
 
+async function fetchCountryOptions() {
+  const res = await fetch(getApiUrl("/list/countries?limit=300"), {
+    method: "GET",
+    credentials: "include",
+  });
+  const data = await res.json().catch(() => ({}));
+
+  if (!res.ok || data.success === false) {
+    throw new Error(data.error || "Failed to load countries");
+  }
+
+  const rows = Array.isArray(data.data) ? data.data : [];
+  return rows
+    .map((country: any) => ({
+      _id: String(country?._id || ""),
+      countryName: String(country?.countryName || "").trim(),
+      countryCode: normalizeCountryCode(country?.countryCode),
+      flag: String(country?.flag || "").trim(),
+    }))
+    .filter((country: CountryOption) => country.countryName && country.countryCode)
+    .sort((a: CountryOption, b: CountryOption) =>
+      a.countryName.localeCompare(b.countryName),
+    );
+}
+
 
 async function fetchBrandMediaKit(
   channelId: string,
@@ -963,111 +1006,6 @@ function getTopScoreLabel(score?: number) {
   if (value >= 70) return "Good Match";
   if (value >= 55) return "Moderate Match";
   return "Needs Review";
-}
-
-
-function getBrandIdFromStorage() {
-  if (typeof window === "undefined") return "";
-
-  return String(
-    window.localStorage.getItem("brandId") ||
-      window.localStorage.getItem("brand_id") ||
-      window.localStorage.getItem("brandMongoId") ||
-      "",
-  ).trim();
-}
-
-function getYouTubeInviteHandle(creator?: YouTubeCreator | null) {
-  const value = String(
-    creator?.channelId ||
-      (creator as any)?.youtubeChannelId ||
-      creator?.channelName ||
-      "",
-  )
-    .replace(/^@/, "")
-    .replace(/\s+/g, "")
-    .trim();
-
-  return value || null;
-}
-
-function buildFallbackYouTubeCreator(channelId: string): YouTubeCreator {
-  return {
-    channelId,
-    channelName: channelId,
-  };
-}
-
-function buildDetailPanelRawFromYouTubeCreator(creator?: YouTubeCreator | null) {
-  if (!creator) return null;
-
-  const channelId = String(creator.channelId || "").trim();
-  const safeHandle = getYouTubeInviteHandle(creator) || channelId;
-  const channelName = String(creator.channelName || safeHandle || "Creator").trim();
-  const subscribers = getSubs(creator);
-
-  return {
-    channelId,
-    userId: channelId,
-    platform: "youtube",
-    profile: {
-      channelId,
-      userId: channelId,
-      modashId: channelId,
-      username: safeHandle,
-      handle: safeHandle,
-      fullname: channelName,
-      name: channelName,
-      picture: creator.thumbnail,
-      url: creator.channelUrl,
-      provider: "youtube",
-      followers: subscribers,
-      subscribers,
-      avgViews: creator.avgViews,
-      averageViews: creator.avgViews,
-      avgLikes: creator.avgLikes,
-      avgComments: creator.avgComments,
-      engagementRate: creator.engagementRate,
-      country: creator.country || creator.estimatedAudienceCountry,
-      language: creator.primaryLanguage ? { name: creator.primaryLanguage } : undefined,
-      bio: creator.description || creator.channelDescription,
-      postsCount: creator.totalVideos || creator.totalLifetimeVideos,
-      stats: {
-        followers: { value: subscribers },
-        avgViews: { value: creator.avgViews },
-        avgLikes: { value: creator.avgLikes },
-        avgComments: { value: creator.avgComments },
-      },
-      audience: {
-        geoCountries: creator.estimatedAudienceCountry
-          ? [{ name: creator.estimatedAudienceCountry, weight: 1 }]
-          : [],
-        languages: creator.primaryLanguage
-          ? [{ code: creator.primaryLanguage, weight: 1 }]
-          : [],
-        interests: Array.isArray(creator.channelTags)
-          ? creator.channelTags.map((name) => ({ name, weight: 1 }))
-          : [],
-        credibility: Number(creator.scores?.authenticityScore || 0) / 100,
-      },
-      recentPosts: Array.isArray(creator.recentVideoTitles)
-        ? creator.recentVideoTitles.map((video) => ({
-            title: video.title,
-            text: video.description || video.title,
-            thumbnail: video.thumbnail,
-            image: video.thumbnail,
-            url: video.url,
-            views: video.views,
-            likes: video.likes,
-            comments: video.comments,
-            publishedAt: video.publishedAt,
-            createdAt: video.publishedAt,
-          }))
-        : [],
-      popularPosts: [],
-      sponsoredPosts: [],
-    },
-  };
 }
 
 function MiniStatCard({
@@ -1524,29 +1462,27 @@ function MediaKitDrawer({
 
 export default function YouTubeBrowse() {
   const router = useRouter();
-  const pathname = usePathname();
   const searchParams = useSearchParams();
   const campaignId = searchParams.get("campaignId") || "";
-  const campaignName = String(searchParams.get("campaignName") || "").trim();
-  const routeChannelId = String(
-    searchParams.get("channelId") || searchParams.get("youtubeChannelId") || "",
-  ).trim();
 
   const [filters, setFilters] = useState<Filters>(defaultFilters);
   const [allCreators, setAllCreators] = useState<YouTubeCreator[]>([]);
   const [frontendPage, setFrontendPage] = useState(1);
-  const [selectedCreator, setSelectedCreator] = useState<YouTubeCreator | null>(null);
-  const [detailPanelOpen, setDetailPanelOpen] = useState(false);
-  const [brandId, setBrandId] = useState("");
   const [showMoreFilters, setShowMoreFilters] = useState(false);
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const [showTierDropdown, setShowTierDropdown] = useState(false);
+  const [showCountryDropdown, setShowCountryDropdown] = useState(false);
+  const [countrySearch, setCountrySearch] = useState("");
+  const [countries, setCountries] = useState<CountryOption[]>([]);
+  const [countriesLoading, setCountriesLoading] = useState(false);
+  const [countryError, setCountryError] = useState("");
   const [loading, setLoading] = useState(false);
   const [warning, setWarning] = useState("");
   const [error, setError] = useState("");
   const categoryDropdownRef = useRef<HTMLDivElement | null>(null);
   const filterDropdownRef = useRef<HTMLDivElement | null>(null);
   const tierDropdownRef = useRef<HTMLDivElement | null>(null);
+  const countryDropdownRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1580,27 +1516,37 @@ export default function YouTubeBrowse() {
   }, []);
 
   useEffect(() => {
-    setBrandId(getBrandIdFromStorage());
-  }, []);
+    if (!showMoreFilters || countries.length) return;
 
-  useEffect(() => {
-    if (!routeChannelId) return;
+    let mounted = true;
 
-    const creatorFromResults = allCreators.find(
-      (creator) => String(creator.channelId || "").trim() === routeChannelId,
-    );
+    async function loadCountries() {
+      try {
+        setCountriesLoading(true);
+        setCountryError("");
+        const rows = await fetchCountryOptions();
+        if (mounted) setCountries(rows);
+      } catch (err: any) {
+        if (mounted) setCountryError(err?.message || "Failed to load countries");
+      } finally {
+        if (mounted) setCountriesLoading(false);
+      }
+    }
 
-    setSelectedCreator(creatorFromResults || buildFallbackYouTubeCreator(routeChannelId));
-    setDetailPanelOpen(true);
-  }, [routeChannelId, allCreators]);
+    loadCountries();
+
+    return () => {
+      mounted = false;
+    };
+  }, [showMoreFilters, countries.length]);
 
   function openMediaKitPage(creator: YouTubeCreator) {
     if (!creator.channelId) return;
 
-    const params = new URLSearchParams(searchParams.toString());
-    params.set("mediaKit", "1");
-    params.set("channelId", creator.channelId);
-    params.set("returnTo", "browse");
+    const params = new URLSearchParams({
+      channelId: creator.channelId,
+      returnTo: "browse",
+    });
 
     if (campaignId) params.set("campaignId", campaignId);
     if (filters.keyword) params.set("keyword", filters.keyword);
@@ -1619,23 +1565,7 @@ export default function YouTubeBrowse() {
       );
     }
 
-    setSelectedCreator(creator);
-    setDetailPanelOpen(true);
-    router.push(`${pathname}?${params.toString()}`);
-  }
-
-  function closeMediaKitPanel() {
-    setDetailPanelOpen(false);
-    setSelectedCreator(null);
-
-    const params = new URLSearchParams(searchParams.toString());
-    params.delete("mediaKit");
-    params.delete("channelId");
-    params.delete("youtubeChannelId");
-    params.delete("returnTo");
-
-    const query = params.toString();
-    router.replace(query ? `${pathname}?${query}` : pathname);
+    router.push(`/brand/media-kit?${params.toString()}`);
   }
 
   const activeFiltersCount = useMemo(() => {
@@ -1646,6 +1576,23 @@ export default function YouTubeBrowse() {
     if (filters.minEngagement) count += 1;
     return count;
   }, [filters]);
+
+  const selectedCountryLabel = useMemo(
+    () => getCountryDisplayName(filters.country, countries),
+    [filters.country, countries],
+  );
+
+  const filteredCountryOptions = useMemo(() => {
+    const query = countrySearch.trim().toLowerCase();
+    const rows = query
+      ? countries.filter((country) => {
+          const haystack = `${country.countryName} ${country.countryCode}`.toLowerCase();
+          return haystack.includes(query);
+        })
+      : countries;
+
+    return rows.slice(0, 120);
+  }, [countries, countrySearch]);
 
   const sortedCreators = useMemo(
     () => sortCreatorsForSelectedFilters(allCreators, filters),
@@ -1661,8 +1608,6 @@ export default function YouTubeBrowse() {
     (currentPage - 1) * FRONTEND_PAGE_SIZE,
     currentPage * FRONTEND_PAGE_SIZE,
   );
-
-  const panelCreator = selectedCreator || (routeChannelId ? buildFallbackYouTubeCreator(routeChannelId) : null);
 
   async function loadCreators(nextFilters: Partial<Filters> = filters) {
     try {
@@ -1727,12 +1672,14 @@ export default function YouTubeBrowse() {
         categoryDropdownRef.current,
         filterDropdownRef.current,
         tierDropdownRef.current,
+        countryDropdownRef.current,
       ].some((node) => node?.contains(target));
 
       if (!clickedInsideDropdown) {
         setShowCategoryDropdown(false);
         setShowMoreFilters(false);
         setShowTierDropdown(false);
+        setShowCountryDropdown(false);
       }
     }
 
@@ -1775,6 +1722,8 @@ export default function YouTubeBrowse() {
       limit: FRONTEND_PAGE_SIZE,
     };
     setFilters(next);
+    setCountrySearch("");
+    setShowCountryDropdown(false);
   }
 
   function handleResetAll() {
@@ -1784,6 +1733,8 @@ export default function YouTubeBrowse() {
     setShowMoreFilters(false);
     setShowCategoryDropdown(false);
     setShowTierDropdown(false);
+    setShowCountryDropdown(false);
+    setCountrySearch("");
     setWarning("");
     setError("");
   }
@@ -1807,6 +1758,12 @@ export default function YouTubeBrowse() {
   function handleTierSelect(value: string) {
     handleTierChange(value);
     setShowTierDropdown(false);
+  }
+
+  function handleCountrySelect(value: string) {
+    updateFilter("country", normalizeCountryCode(value));
+    setCountrySearch("");
+    setShowCountryDropdown(false);
   }
 
   function goToPage(page: number) {
@@ -1845,6 +1802,7 @@ export default function YouTubeBrowse() {
                 setShowCategoryDropdown((prev) => !prev);
                 setShowMoreFilters(false);
                 setShowTierDropdown(false);
+                setShowCountryDropdown(false);
               }}
               className="flex h-[52px] w-full items-center justify-between gap-3 rounded-full border border-[#e4d8cc] bg-white px-5 text-[15px] font-medium text-black shadow-sm outline-none"
             >
@@ -1912,6 +1870,7 @@ export default function YouTubeBrowse() {
                 setShowMoreFilters((prev) => !prev);
                 setShowCategoryDropdown(false);
                 setShowTierDropdown(false);
+                setShowCountryDropdown(false);
               }}
               className="flex h-[52px] min-w-[135px] items-center justify-center gap-2 rounded-full border border-[#e4d8cc] bg-white px-5 text-[16px] font-medium text-black shadow-sm"
             >
@@ -1926,23 +1885,30 @@ export default function YouTubeBrowse() {
             </button>
 
             {showMoreFilters && (
-              <div className="absolute right-0 top-[calc(100%+10px)] z-50 w-[560px] rounded-[22px] border border-[#e8ded2] bg-white shadow-2xl">
-                <div className="flex items-center justify-between border-b border-[#eee5da] px-6 py-5">
-                  <div>
-                    <h3 className="text-[20px] font-semibold text-black">
-                      Filter
-                    </h3>
-                    <p className="mt-1 text-sm text-[#777]">
-                      Refine creators by tier, country, views, and engagement.
-                    </p>
+              <div className="absolute right-0 top-[calc(100%+10px)] z-50 w-[640px] overflow-visible rounded-[26px] border border-[#eadfd3] bg-white shadow-[0_24px_80px_rgba(28,18,8,0.18)]">
+                <div className="rounded-t-[26px] bg-gradient-to-r from-[#fff8ea] via-white to-[#f7f2ed] px-6 py-5">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#9a6500]">
+                        Creator discovery
+                      </p>
+                      <h3 className="mt-1 text-[22px] font-bold text-black">
+                        Refine YouTube creators
+                      </h3>
+                    
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowMoreFilters(false);
+                        setShowTierDropdown(false);
+                        setShowCountryDropdown(false);
+                      }}
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#eadfd3] bg-white text-black shadow-sm"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowMoreFilters(false)}
-                    className="flex h-8 w-8 items-center justify-center rounded-full bg-[#f4f0ea] text-black"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
                 </div>
 
                 <div className="px-6 py-6">
@@ -1955,7 +1921,7 @@ export default function YouTubeBrowse() {
                         <button
                           type="button"
                           onClick={() => setShowTierDropdown((prev) => !prev)}
-                          className="flex h-12 w-full items-center justify-between gap-3 rounded-full border border-[#ddd] bg-white px-4 text-left text-sm text-black outline-none"
+                          className="flex h-12 w-full items-center justify-between gap-3 rounded-full border border-[#ddd] bg-white px-4 text-left text-sm text-black outline-none transition hover:border-[#c9b8a6]"
                         >
                           <span className="truncate">
                             {filters.subscriberTier
@@ -2006,18 +1972,101 @@ export default function YouTubeBrowse() {
                       </div>
                     </div>
 
-                    <div>
+                    <div ref={countryDropdownRef} className="relative">
                       <label className="mb-2 block text-sm font-semibold text-black">
                         Country
                       </label>
-                      <input
-                        value={filters.country}
-                        onChange={(e) =>
-                          updateFilter("country", e.target.value)
-                        }
-                        placeholder="US, IN, GB..."
-                        className="h-12 w-full rounded-full border border-[#ddd] bg-white px-4 text-sm text-black outline-none"
-                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowCountryDropdown((prev) => !prev);
+                          setShowTierDropdown(false);
+                        }}
+                        className="flex h-12 w-full items-center justify-between gap-3 rounded-full border border-[#ddd] bg-white px-4 text-left text-sm text-black outline-none transition hover:border-[#c9b8a6]"
+                      >
+                        <span className={`truncate ${filters.country ? "text-black" : "text-[#777]"}`}>
+                          {filters.country ? selectedCountryLabel : "Select country"}
+                        </span>
+                        <ChevronDown
+                          className={`h-4 w-4 shrink-0 transition ${
+                            showCountryDropdown ? "rotate-180" : ""
+                          }`}
+                        />
+                      </button>
+
+                      {showCountryDropdown && (
+                        <div className="absolute left-0 top-[calc(100%+8px)] z-[110] w-full overflow-hidden rounded-[18px] border border-[#e6d9cc] bg-white shadow-2xl">
+                          <div className="border-b border-[#f0e8df] p-3">
+                            <div className="flex h-10 items-center rounded-full border border-[#e6d9cc] bg-[#faf7f2] px-3">
+                              <Search className="mr-2 h-4 w-4 text-[#8a8179]" />
+                              <input
+                                value={countrySearch}
+                                onChange={(event) => setCountrySearch(event.target.value)}
+                                placeholder="Search country or code"
+                                className="h-full flex-1 bg-transparent text-sm outline-none placeholder:text-[#9a9288]"
+                                autoFocus
+                              />
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => handleCountrySelect("")}
+                            className={`flex w-full items-center justify-between px-4 py-3 text-left text-sm hover:bg-[#faf6f1] ${
+                              !filters.country
+                                ? "bg-[#f7efe6] font-semibold text-black"
+                                : "text-[#555]"
+                            }`}
+                          >
+                            <span>Any country</span>
+                            {!filters.country ? (
+                              <span className="rounded-full bg-black px-2 py-0.5 text-[10px] text-white">
+                                Selected
+                              </span>
+                            ) : null}
+                          </button>
+
+                          <div className="max-h-[260px] overflow-y-auto py-1">
+                            {countriesLoading ? (
+                              <div className="px-4 py-5 text-sm text-[#777]">
+                                Loading countries...
+                              </div>
+                            ) : countryError ? (
+                              <div className="px-4 py-4 text-sm text-[#b91c1c]">
+                                {countryError}
+                              </div>
+                            ) : filteredCountryOptions.length ? (
+                              filteredCountryOptions.map((country) => {
+                                const selected = normalizeCountryCode(filters.country) === country.countryCode;
+                                return (
+                                  <button
+                                    key={country._id || country.countryCode}
+                                    type="button"
+                                    onClick={() => handleCountrySelect(country.countryCode)}
+                                    className={`flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left text-sm hover:bg-[#faf6f1] ${
+                                      selected
+                                        ? "bg-[#f7efe6] font-semibold text-black"
+                                        : "text-[#555]"
+                                    }`}
+                                  >
+                                    <span className="flex min-w-0 items-center gap-2">
+                                      <span className="text-lg leading-none">{country.flag || "🌐"}</span>
+                                      <span className="truncate">{country.countryName}</span>
+                                    </span>
+                                    <span className="shrink-0 rounded-full bg-[#f4f0ea] px-2 py-0.5 text-[11px] font-bold text-[#6f6258]">
+                                      {country.countryCode}
+                                    </span>
+                                  </button>
+                                );
+                              })
+                            ) : (
+                              <div className="px-4 py-5 text-sm text-[#777]">
+                                No country found
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     <div>
@@ -2106,6 +2155,11 @@ export default function YouTubeBrowse() {
           {filters.subscriberTier && (
             <span className="rounded-full border border-[#e4d8cc] bg-[#faf7f2] px-3 py-1.5 text-[13px] text-[#6f6258]">
               Tier: {getTierLabelWithRange(filters.subscriberTier)}
+            </span>
+          )}
+          {filters.country && (
+            <span className="rounded-full border border-[#e4d8cc] bg-[#faf7f2] px-3 py-1.5 text-[13px] text-[#6f6258]">
+              Country: {selectedCountryLabel}
             </span>
           )}
         </div>
@@ -2242,26 +2296,6 @@ export default function YouTubeBrowse() {
         </div>
       </div>
 
-      <DetailPanel
-        open={detailPanelOpen}
-        onClose={closeMediaKitPanel}
-        loading={false}
-        error={null}
-        data={null}
-        raw={buildDetailPanelRawFromYouTubeCreator(panelCreator)}
-        platform={"youtube" as any}
-        emailExists={Boolean(
-          panelCreator?.contact?.youtubeAboutEmail ||
-            (panelCreator?.contact?.totalEmails || []).length,
-        )}
-        onChangeCalc={() => undefined}
-        brandId={brandId}
-        campaignId={campaignId || null}
-        campaignName={campaignName || null}
-        handle={panelCreator ? getYouTubeInviteHandle(panelCreator) : null}
-        youtubeChannelId={panelCreator?.channelId || routeChannelId || null}
-        lastFetchedAt={panelCreator?.recentUploadDate || null}
-      />
     </div>
   );
 }

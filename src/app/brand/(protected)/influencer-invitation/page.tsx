@@ -23,6 +23,16 @@ type Creator = {
     youtubeChannelId?: string | null;
   };
   channelId?: string | null;
+  channelName?: string;
+  channelUrl?: string;
+  subscriberCount?: number;
+  creatorTier?: string;
+  shortlist?: {
+    score?: number;
+    status?: string;
+    nicheFit?: number;
+    contentQuality?: string;
+  };
   source?: string;
   profileSource?: string;
   name?: string;
@@ -332,7 +342,18 @@ function normalizePlatform(platform?: string | null) {
 }
 
 function getCreatorName(c: Creator) {
-  return c.name || c.fullname || c.username || c.handle || "Unknown Creator";
+  const anyCreator = c as any;
+
+  return (
+    c.name ||
+    c.fullname ||
+    c.username ||
+    c.handle ||
+    c.channelName ||
+    anyCreator.rawCreator?.channelName ||
+    anyCreator.rawCreator?.name ||
+    "Unknown Creator"
+  );
 }
 
 function getCreatorHandle(c: Creator) {
@@ -355,6 +376,18 @@ function getCreatorPlatform(c: Creator) {
   return "";
 }
 
+function getTierFromFollowerCount(followers?: number | null) {
+  const count = Number(followers || 0);
+
+  if (count >= 1000000) return "Mega";
+  if (count >= 500000) return "Macro";
+  if (count >= 100000) return "Mid-tier";
+  if (count >= 10000) return "Micro";
+  if (count >= 1000) return "Nano";
+
+  return "—";
+}
+
 function getCreatorIdentityKey(c: Creator) {
   const platform = getCreatorPlatform(c);
   const modashId = getCreatorModashId(c);
@@ -374,14 +407,74 @@ type ResolvedRecommendationSource = ReturnType<
   typeof getResolvedRecommendationSource
 >;
 
+function cleanStr(value: unknown): string {
+  if (value === null || typeof value === "undefined") return "";
+  return String(value).trim();
+}
+
 function normalizeCreatorForRecommendationSource(
   creator: Creator,
   sourceInfo: ResolvedRecommendationSource
 ): Creator {
   if (sourceInfo.source === "youtube_api") {
+    const anyCreator = creator as any;
+    const rawCreator = anyCreator.rawCreator || {};
+    const channelName =
+      creator.channelName ||
+      rawCreator.channelName ||
+      creator.name ||
+      creator.fullname ||
+      creator.username ||
+      "YouTube Creator";
+    const channelId =
+      creator.channelId ||
+      creator.ids?.youtubeChannelId ||
+      rawCreator.channelId ||
+      "";
+    const channelUrl =
+      creator.channelUrl ||
+      rawCreator.channelUrl ||
+      creator.url ||
+      creator.urls?.url ||
+      (channelId ? `https://www.youtube.com/channel/${channelId}` : "");
+    const youtubeHandleFromUrl =
+      cleanStr(channelUrl).match(/youtube\.com\/@([^/?#]+)/i)?.[1] || "";
+    const followers = Number(
+      creator.followers ??
+        creator.subscribers ??
+        creator.subscriberCount ??
+        rawCreator.subscribers ??
+        rawCreator.subscriberCount ??
+        0
+    );
+    const tierLabel =
+      creator.tier?.label ||
+      creator.tier?.key ||
+      creator.creatorTier ||
+      rawCreator.creatorTier ||
+      getTierFromFollowerCount(followers);
+    const thumbnail =
+      getCreatorPicture(creator) ||
+      creator.thumbnail ||
+      rawCreator.thumbnail ||
+      creator.picture ||
+      "";
+
     return {
       ...creator,
-      picture: getCreatorPicture(creator) || creator.picture,
+      name: channelName,
+      fullname: channelName,
+      username: creator.username || creator.handle || youtubeHandleFromUrl || undefined,
+      handle: creator.handle || (youtubeHandleFromUrl ? `@${youtubeHandleFromUrl}` : creator.handle),
+      channelName,
+      channelId,
+      channelUrl,
+      url: channelUrl,
+      followers: Number.isFinite(followers) && followers > 0 ? followers : undefined,
+      subscribers: Number.isFinite(followers) && followers > 0 ? followers : creator.subscribers,
+      tier: creator.tier || { key: tierLabel, label: tierLabel },
+      picture: thumbnail,
+      thumbnail,
       platform: "youtube",
       source: creator.source || "youtube_api",
       profileSource: creator.profileSource || "youtube_api",
@@ -445,7 +538,8 @@ function isYouTubeCreator(c?: Creator | null) {
   return (
     getCreatorPlatform(c) === "youtube" ||
     c.source === "youtube_api" ||
-    c.profileSource === "youtube_api"
+    c.profileSource === "youtube_api" ||
+    Boolean(c.channelId || c.channelName || c.channelUrl)
   );
 }
 
@@ -667,8 +761,15 @@ function getCreatorAiScore(c: Creator) {
 
 function getRecommendedCreators(data: RecommendedCreatorsResponse): Creator[] {
   if (Array.isArray(data)) return data;
+
+  const anyData = data as any;
+
   if (Array.isArray(data?.results)) return data.results;
   if (Array.isArray(data?.data)) return data.data;
+  if (Array.isArray(anyData?.creators)) return anyData.creators;
+  if (Array.isArray(anyData?.recommendations)) return anyData.recommendations;
+  if (Array.isArray(anyData?.recommendedCreators)) return anyData.recommendedCreators;
+
   return [];
 }
 
@@ -911,6 +1012,74 @@ function getStoredBrandMongoId() {
     window.localStorage.getItem("currentBrandId") ||
     ""
   );
+}
+
+
+const INVITE_PAGE_CACHE_PREFIX = "collabglam:invite-page-creators";
+const INVITE_PAGE_CACHE_TTL_MS = 2 * 60 * 60 * 1000;
+
+type InvitePageCachePayload = {
+  campaignId: string;
+  creators: Creator[];
+  selectedKeys: string[];
+  alreadyInvitedKeys: string[];
+  savedAt: number;
+};
+
+function getInvitePageCacheKey(campaignId?: string | null) {
+  const id = String(campaignId || "").trim();
+  return id ? `${INVITE_PAGE_CACHE_PREFIX}:${id}` : "";
+}
+
+function readInvitePageCache(campaignId?: string | null) {
+  if (typeof window === "undefined") return null;
+
+  const key = getInvitePageCacheKey(campaignId);
+  if (!key) return null;
+
+  try {
+    const raw = window.sessionStorage.getItem(key);
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw) as InvitePageCachePayload;
+    if (!parsed || !Array.isArray(parsed.creators)) return null;
+
+    const savedAt = Number(parsed.savedAt || 0);
+    if (!savedAt || Date.now() - savedAt > INVITE_PAGE_CACHE_TTL_MS) {
+      window.sessionStorage.removeItem(key);
+      return null;
+    }
+
+    return parsed;
+  } catch (_) {
+    return null;
+  }
+}
+
+function writeInvitePageCache(
+  campaignId: string | null | undefined,
+  creators: Creator[],
+  selectedKeys: Set<string>,
+  alreadyInvitedKeys: Set<string>
+) {
+  if (typeof window === "undefined") return;
+
+  const key = getInvitePageCacheKey(campaignId);
+  if (!key) return;
+
+  try {
+    const payload: InvitePageCachePayload = {
+      campaignId: String(campaignId || ""),
+      creators,
+      selectedKeys: Array.from(selectedKeys),
+      alreadyInvitedKeys: Array.from(alreadyInvitedKeys),
+      savedAt: Date.now(),
+    };
+
+    window.sessionStorage.setItem(key, JSON.stringify(payload));
+  } catch (_) {
+    // Session cache is only for navigation restore. Ignore storage failures.
+  }
 }
 
 function getCreatorAudienceAuthenticity(c: Creator) {
@@ -1178,38 +1347,46 @@ export default function InfluencerInvitationPage() {
   const fetchYouTubeCampaignRecommendations = React.useCallback(
     async (brandId: string, currentCampaignId: string) => {
       const url = `/youtube-data/campaign/${currentCampaignId}/recommend-influencers`;
-  
-      const body = {
-        brandId,
-        campaignId: currentCampaignId,
-        limit: 100,
-        minimumInfluencers: 50,
-        minInfluencers: 50,
-        save: true,
-        strictCountry: true,
-  
-        // Synchronous request:
-        // keep loader visible and wait for final correct creators.
-        // Do not return old cached/background rows first.
-        fast: false,
-        background: false,
-        forceBackground: false,
-      };
-  
-      const response = await api.post<RecommendedCreatorsResponse>(url, body, {
-        // 6 minutes frontend timeout.
-        // Backend/Nginx should also be 360s or more.
-        timeout: 360000,
-      });
-  
+
+      const response = await api.post<RecommendedCreatorsResponse>(
+        url,
+        {
+          brandId,
+          campaignId: currentCampaignId,
+          limit: 100,
+          minimumInfluencers: 50,
+          minInfluencers: 50,
+          save: true,
+          strictCountry: true,
+          fast: false,
+          background: false,
+          forceBackground: false,
+        },
+        {
+          // Wait up to 6 minutes while backend completes YouTube discovery.
+          timeout: 360000,
+        }
+      );
+
       return response.data;
     },
     []
   );
 
   const fetchCreators = React.useCallback(async () => {
-    setLoading(true);
     setError(null);
+
+    const cached = readInvitePageCache(campaignId);
+    if (cached) {
+      setCreators(cached.creators);
+      setSelected(new Set(cached.selectedKeys || []));
+      setAlreadyInvited(new Set(cached.alreadyInvitedKeys || []));
+      setSending(new Set());
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
 
     try {
       const brandId = getStoredBrandMongoId();
@@ -1263,6 +1440,7 @@ export default function InfluencerInvitationPage() {
       setAlreadyInvited(existingKeys);
       setSelected(defaultSelected);
       setSending(new Set());
+      writeInvitePageCache(campaignId, list, defaultSelected, existingKeys);
     } catch (e: any) {
       const message = await getApiErrorMessage(e, "Failed to load creators");
 
@@ -1285,6 +1463,11 @@ export default function InfluencerInvitationPage() {
   React.useEffect(() => {
     fetchCreators();
   }, [fetchCreators]);
+
+  React.useEffect(() => {
+    if (loading || !campaignId || !creators.length) return;
+    writeInvitePageCache(campaignId, creators, selected, alreadyInvited);
+  }, [alreadyInvited, campaignId, creators, loading, selected]);
 
   const createInvitationForCreator = React.useCallback(
     async (
@@ -1812,23 +1995,6 @@ export default function InfluencerInvitationPage() {
           <div className="min-h-0 flex-1 overflow-y-auto px-1 py-1">
             {loading ? (
               <>
-                <div className="mx-2 mb-4 rounded-xl border border-gray-200 bg-white/75 px-6 py-5 text-center shadow-sm backdrop-blur-sm">
-                  <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-gray-100 text-xl">
-                    🔎
-                  </div>
-                  <h2 className="text-[18px] font-semibold text-gray-950">
-                    Finding best YouTube creators...
-                  </h2>
-                  <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-gray-600">
-                    We are searching YouTube, checking channel activity, matching country and tier,
-                    calculating authenticity, and preparing the final creator list. This can take up
-                    to 5 minutes.
-                  </p>
-                  <div className="mx-auto mt-4 h-2 max-w-md overflow-hidden rounded-full bg-gray-100">
-                    <div className="h-full w-1/2 animate-pulse rounded-full bg-gray-400" />
-                  </div>
-                </div>
-
                 {Array.from({ length: 8 }).map((_, i) => (
                   <div
                     key={i}
@@ -1870,6 +2036,7 @@ export default function InfluencerInvitationPage() {
                       onClick={() => {
                         const mediaKitHref = buildCreatorMediaKitHref(c, campaignId);
                         if (isYouTubeCreator(c) && mediaKitHref) {
+                          writeInvitePageCache(campaignId, creators, selected, alreadyInvited);
                           router.push(mediaKitHref);
                           return;
                         }
@@ -1881,6 +2048,7 @@ export default function InfluencerInvitationPage() {
                           event.preventDefault();
                           const mediaKitHref = buildCreatorMediaKitHref(c, campaignId);
                           if (isYouTubeCreator(c) && mediaKitHref) {
+                            writeInvitePageCache(campaignId, creators, selected, alreadyInvited);
                             router.push(mediaKitHref);
                             return;
                           }

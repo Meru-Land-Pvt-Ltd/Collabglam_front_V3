@@ -27,7 +27,7 @@ export function InfluencerCountsProvider({ children }: { children: ReactNode }) 
     undecided: 0,
     rejected: 0,
   });
-
+ 
   return (
     <CountsContext.Provider value={{ counts, setCounts }}>
       {children}

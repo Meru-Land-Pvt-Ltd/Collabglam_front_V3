@@ -146,6 +146,8 @@ type GoodFitInfluencer = {
 
   provider?: string;
   platform?: string;
+  channelId?: string;
+  youtubeChannelId?: string;
 
   name?: string;
   fullname?: string;
@@ -222,6 +224,7 @@ type PendingInvitationContext = {
   handle: string;
   platform: string;
   brandId: string;
+  channelId?: string;
   mode: PendingInvitationMode;
   invitationId?: string;
 };
@@ -249,6 +252,7 @@ type Invitation = {
 
   handle: string;
   platform: string;
+  channelId?: string | null;
   userId?: string | null;
   modashUserId?: string | null;
 
@@ -1700,6 +1704,13 @@ function mapInvitationToRow(invitation: Invitation, index: number): InfluencerRo
     `${invitation.handle || "invited"}-${campaignId || index}`
   );
 
+  const invitationChannelId = String(
+    invitation.channelId ||
+      invitation.userId ||
+      invitation.modashUserId ||
+      ""
+  ).trim();
+
   return {
     id: rowId,
     profile:
@@ -1739,10 +1750,12 @@ function mapInvitationToRow(invitation: Invitation, index: number): InfluencerRo
       _id: rowId,
       invitationId: invitation.invitationId || null,
 
-      userId: invitation.userId || invitation.modashUserId || "",
-      influencerId: invitation.userId || invitation.modashUserId || "",
-      creatorId: invitation.userId || invitation.modashUserId || "",
-      modashId: invitation.modashUserId || invitation.userId || "",
+      channelId: invitationChannelId,
+      youtubeChannelId: invitationChannelId,
+      userId: invitation.userId || invitationChannelId || invitation.modashUserId || "",
+      influencerId: invitation.userId || invitationChannelId || invitation.modashUserId || "",
+      creatorId: invitation.userId || invitationChannelId || invitation.modashUserId || "",
+      modashId: invitation.modashUserId || invitation.userId || invitationChannelId || "",
 
       provider: invitation.platform,
       platform: invitation.platform,
@@ -2540,10 +2553,14 @@ function getInvitationCampaignId(invitation: any) {
 
 function getInvitationUserId(invitation: any) {
   return String(
+    invitation?.channelId ||
+    invitation?.youtubeChannelId ||
     invitation?.userId ||
     invitation?.modashUserId ||
     invitation?.influencerId ||
     invitation?.creatorId ||
+    invitation?.raw?.channelId ||
+    invitation?.raw?.youtubeChannelId ||
     invitation?.raw?.userId ||
     invitation?.raw?.modashUserId ||
     ""
@@ -3455,6 +3472,7 @@ export default function CreatorHubPage() {
       const handle = getInvitationHandle(row);
       const platform = getRowPlatform(row);
       const userId = getRowUserId(row);
+      const channelId = getRowInvitationChannelId(row);
 
       if (!brandId) return [];
 
@@ -3463,6 +3481,8 @@ export default function CreatorHubPage() {
           brandId,
           userId,
           modashUserId: userId,
+          channelId,
+          youtubeChannelId: channelId,
           handle,
           platform,
           page: 1,
@@ -3526,6 +3546,7 @@ export default function CreatorHubPage() {
       }
 
       const platform = getRowPlatform(row);
+      const channelId = getRowInvitationChannelId(row);
 
       if (!isSupportedInvitationPlatform(platform)) {
         setError("Unsupported or missing platform.");
@@ -3565,6 +3586,7 @@ export default function CreatorHubPage() {
         handle,
         platform,
         brandId,
+        channelId,
         mode,
         invitationId: lock?.invitationId,
       });
@@ -3576,12 +3598,12 @@ export default function CreatorHubPage() {
 
   const handleSendInvitation = React.useCallback(
     async (row: InfluencerRow, campaignIdOverride?: string) => {
-      const campaignId = String(
-        campaignIdOverride || getRowCampaignId(row) || ""
-      ).trim();
+      const campaignId = String(campaignIdOverride || "").trim();
 
       if (!campaignId) {
-        setActiveInviteCampaignPickerId(row.id);
+        setActiveInviteCampaignPickerId((current) =>
+          current === row.id ? null : row.id
+        );
         void loadInvitationLocksForRow(row);
         return;
       }
@@ -3647,9 +3669,14 @@ export default function CreatorHubPage() {
         handle,
         platform,
         brandId,
+        channelId,
         mode,
         invitationId,
       } = pendingInvitation;
+
+      const invitationChannelId = String(
+        channelId || getRowInvitationChannelId(row) || getRowUserId(row) || ""
+      ).trim();
 
       let backendToastMessage = "";
 
@@ -3665,12 +3692,12 @@ export default function CreatorHubPage() {
           campaignId?: string;
           campaignTitle?: string;
           userId?: string;
+          channelId?: string;
+          youtubeChannelId?: string;
           emailSubject?: string;
           emailBody?: string;
           emailHtmlBody?: string;
-          emailTo?: string;
           emailAttachments?: EmailEditorPayload["attachments"];
-          email?: EmailEditorPayload;
           isFollowUp?: boolean;
           followUp?: boolean;
           lockPermanently?: boolean;
@@ -3690,13 +3717,13 @@ export default function CreatorHubPage() {
           status: "invited",
           campaignId,
           campaignTitle,
-          userId: getRowUserId(row),
+          userId: getRowUserId(row) || invitationChannelId,
+          channelId: invitationChannelId,
+          youtubeChannelId: invitationChannelId,
           emailSubject: emailPayload.subject,
           emailBody: emailPayload.body,
           emailHtmlBody: emailPayload.htmlBody,
-          emailTo: emailPayload.to,
           emailAttachments: emailPayload.attachments,
-          email: emailPayload,
           isFollowUp: mode === "followup",
           followUp: mode === "followup",
           lockPermanently: mode === "followup",
@@ -4209,6 +4236,48 @@ export default function CreatorHubPage() {
     return "";
   }
 
+  function getRowInvitationChannelId(row: InfluencerRow | null) {
+    if (!row) return "";
+
+    const raw: any = row.raw || {};
+    const rawRaw: any = raw.raw || {};
+    const invitation: any = raw.invitation || rawRaw.invitation || {};
+    const modash: any = getItemModash(raw) || {};
+
+    const candidates = [
+      invitation.channelId,
+      invitation.youtubeChannelId,
+      raw.channelId,
+      raw.youtubeChannelId,
+      rawRaw.channelId,
+      rawRaw.youtubeChannelId,
+      modash.channelId,
+      modash.youtubeChannelId,
+
+      // Current /newinvitations/list response sends the YouTube channel id in userId.
+      invitation.userId,
+      raw.userId,
+      rawRaw.userId,
+      modash.userId,
+      getRowUserId(row),
+    ];
+
+    for (const value of candidates) {
+      const id = String(value || "").trim();
+
+      if (
+        id &&
+        id !== "undefined" &&
+        id !== "null" &&
+        id !== "—"
+      ) {
+        return id;
+      }
+    }
+
+    return "";
+  }
+
   function getPanelFallbackRaw(row: InfluencerRow | null) {
     if (!row) return null;
 
@@ -4569,20 +4638,12 @@ export default function CreatorHubPage() {
                         <td className="px-4">
                           <div className="flex items-center gap-2">
                             <div className="flex overflow-visible rounded-md bg-[#171717]">
-                              <button
-                                type="button"
-                                disabled={sendingInvitationId === row.id}
-                                onClick={() => handleSendInvitation(row)}
-                                className="inline-flex h-7 min-w-[112px] items-center justify-center whitespace-nowrap rounded-l-md bg-[#171717] px-3 text-[11px] font-medium leading-none text-white hover:bg-black disabled:cursor-not-allowed disabled:opacity-60"
-                              >
-                                {sendingInvitationId === row.id ? "Sending..." : "Send Invitation"}
-                              </button>
-
                               <Combobox
                                 items={createCampaignOptions.map((campaign) => campaign.id)}
                                 value=""
                                 open={activeInviteCampaignPickerId === row.id}
                                 onOpenChange={(open) => {
+                                  if (sendingInvitationId === row.id) return;
                                   setActiveInviteCampaignPickerId(open ? row.id : null);
                                   if (open) {
                                     void loadInvitationLocksForRow(row);
@@ -4595,14 +4656,11 @@ export default function CreatorHubPage() {
                               >
                                 <ComboboxTrigger
                                   hideIcon
-                                  className="flex h-7 w-8 items-center justify-center rounded-r-md border-l border-white/20 bg-[#171717] text-white hover:bg-black"
-                                  title={
-                                    getRowCampaignId(row)
-                                      ? `Campaign: ${getRowCampaignName(row)}`
-                                      : "Choose campaign"
-                                  }
+                                  className="inline-flex h-7 min-w-[112px] items-center justify-center whitespace-nowrap rounded-md bg-[#171717] px-3 text-[11px] font-medium leading-none text-white hover:bg-black disabled:cursor-not-allowed disabled:opacity-60"
+                                  title="Choose campaign"
+                                  aria-disabled={sendingInvitationId === row.id}
                                 >
-                                  <CaretDownIcon size={12} weight="bold" />
+                                  {sendingInvitationId === row.id ? "Sending..." : "Send Invitation"}
                                 </ComboboxTrigger>
 
                                 <ComboboxContent
@@ -4981,12 +5039,8 @@ export default function CreatorHubPage() {
         }}
         fromName={getBrandDisplayName()}
         toName={pendingInvitation?.row.profile || ""}
-        toEmail={getRowEmail(pendingInvitation?.row || null)}
-        toLabel={
-          getRowEmail(pendingInvitation?.row || null) ||
-          pendingInvitation?.handle ||
-          ""
-        }
+        toEmail=""
+        toLabel={pendingInvitation?.handle || pendingInvitation?.row.handle || ""}
         toAvatar={pendingInvitation?.row.avatarUrl || null}
         subject={getEmailEditorSubject(pendingInvitation)}
         initialHtmlBody={getEmailEditorHtmlBody(pendingInvitation)}

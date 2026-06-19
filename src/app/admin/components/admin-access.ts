@@ -138,19 +138,19 @@ export const ADMIN_MODULES: AdminModule[] = [
       "sdr-crm",
     ],
   },
-  // {
-  //   key: "invitations",
-  //   label: "Invitations",
-  //   href: "/admin/invitations",
-  //   icon: Bell,
-  //   aliases: [
-  //     "invitation",
-  //     "invite",
-  //     "invites",
-  //     "campaign-invitations",
-  //     "campaign-invites",
-  //   ],
-  // },
+  {
+    key: "invitations",
+    label: "Invitations",
+    href: "/admin/brandInvitations",
+    icon: Bell,
+    aliases: [
+      "invitation",
+      "invite",
+      "invites",
+      "campaign-invitations",
+      "campaign-invites",
+    ],
+  },
   {
     key: "team-discussions",
     label: "Team Discussions",

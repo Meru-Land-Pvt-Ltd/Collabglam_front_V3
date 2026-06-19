@@ -1073,10 +1073,12 @@ function buildDetailPanelRawFromYouTubeCreator(creator?: YouTubeCreator | null) 
 
   return {
     channelId,
+    youtubeChannelId: channelId,
     userId: channelId,
     platform: "youtube",
     profile: {
       channelId,
+      youtubeChannelId: channelId,
       userId: channelId,
       modashId: channelId,
       username: safeHandle,
@@ -1676,7 +1678,8 @@ export default function YouTubeBrowse() {
   }, [showMoreFilters, countries.length]);
 
   function openMediaKitPage(creator: YouTubeCreator) {
-    if (!creator.channelId) return;
+    const channelId = String(creator.channelId || "").trim();
+    if (!channelId) return;
 
     if (typeof window !== "undefined") {
       window.sessionStorage.setItem(
@@ -1685,6 +1688,7 @@ export default function YouTubeBrowse() {
           creators: allCreators,
           filters,
           frontendPage,
+          selectedChannelId: channelId,
           createdAt: Date.now(),
         }),
       );
@@ -1739,7 +1743,6 @@ export default function YouTubeBrowse() {
     (currentPage - 1) * FRONTEND_PAGE_SIZE,
     currentPage * FRONTEND_PAGE_SIZE,
   );
-
   const panelCreator = selectedCreator;
 
   async function loadCreators(nextFilters: Partial<Filters> = filters) {

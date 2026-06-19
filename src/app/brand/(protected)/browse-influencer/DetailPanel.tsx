@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
   AlertCircle,
@@ -272,9 +272,16 @@ type EmailDraftState = {
   campaignIds: string[];
   fromEmail: string;
   fromName: string;
+
+  // Show only creator handle in editor.
   toLabel: string;
+
+  // Keep empty for invitation flow. Do not expose real email in frontend.
   toEmail?: string;
+
+  channelId?: string | null;
   missingEmailId?: string | null;
+
   subject: string;
   initialBody: string;
   initialHtmlBody: string;
@@ -761,6 +768,174 @@ function buildLookalikeReportFromPanelItem(
     statHistory: Array.isArray(rawItem?.statHistory) ? rawItem.statHistory : [],
     lookalikes: Array.isArray(rawItem?.lookalikes) ? rawItem.lookalikes : [],
   } as InfluencerReport & { _id?: string };
+}
+
+
+function isYouTubeChannelId(value?: string | null) {
+  return /^UC[A-Za-z0-9_-]{20,}$/i.test(String(value || '').trim());
+}
+
+function cleanHandleCandidate(value?: any) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+
+  const withoutUrl = raw
+    .replace(/^https?:\/\/(www\.)?youtube\.com\//i, '')
+    .replace(/^@+/, '')
+    .trim();
+
+  if (!withoutUrl) return '';
+  if (isYouTubeChannelId(withoutUrl)) return '';
+
+  // Do not treat channel URLs, channel IDs, or random path values as handles.
+  if (/^channel\//i.test(withoutUrl)) return '';
+  if (/^c\//i.test(withoutUrl)) return '';
+  if (/^user\//i.test(withoutUrl)) return '';
+
+  const simple = withoutUrl.split(/[/?#]/)[0].replace(/^@+/, '').trim();
+
+  if (!simple || isYouTubeChannelId(simple)) return '';
+
+  if (!/^[A-Za-z0-9._-]+$/.test(simple)) return '';
+
+  return `@${simple.toLowerCase()}`;
+}
+
+function getSafeCreatorHandle(params: {
+  selectedReport?: any;
+  raw?: any;
+  data?: any;
+  handle?: string | null;
+}) {
+  const { selectedReport, raw, data, handle } = params;
+
+  const candidates = [
+    handle,
+
+    selectedReport?.handle,
+    selectedReport?.username,
+
+    raw?.handle,
+    raw?.username,
+    raw?.profile?.handle,
+    raw?.profile?.username,
+    raw?.youtube?.handle,
+    raw?.creator?.handle,
+    raw?.influencer?.handle,
+
+    data?.handle,
+    data?.username,
+    data?.profile?.handle,
+    data?.profile?.username,
+    data?.youtube?.handle,
+    data?.creator?.handle,
+    data?.influencer?.handle,
+  ];
+
+  for (const candidate of candidates) {
+    const cleaned = cleanHandleCandidate(candidate);
+    if (cleaned) return cleaned;
+  }
+
+  return '';
+}
+
+function makeValidInvitationHandle(value?: any, prefix = '') {
+  const raw = String(value || '').trim();
+
+  if (!raw) return '';
+
+  const withoutAt = raw
+    .replace(/^@+/, '')
+    .replace(/^https?:\/\/(www\.)?youtube\.com\//i, '')
+    .replace(/^channel\//i, '')
+    .replace(/^c\//i, '')
+    .replace(/^user\//i, '')
+    .split(/[/?#]/)[0]
+    .trim();
+
+  if (!withoutAt) return '';
+
+  const safe = withoutAt
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^[._-]+|[._-]+$/g, '');
+
+  if (!safe) return '';
+
+  return `@${prefix}${safe}`;
+}
+
+function getBackendInvitationHandle(params: {
+  selectedReport?: any;
+  raw?: any;
+  data?: any;
+  handle?: string | null;
+  displayName?: string;
+  editorToLabel?: string;
+  channelId?: string | null;
+}) {
+  const realHandle = getSafeCreatorHandle({
+    selectedReport: params.selectedReport,
+    raw: params.raw,
+    data: params.data,
+    handle: params.handle,
+  });
+
+  if (realHandle) return realHandle;
+
+  const fallbackFromLabel = makeValidInvitationHandle(params.editorToLabel);
+  if (fallbackFromLabel && fallbackFromLabel !== '@creator') {
+    return fallbackFromLabel;
+  }
+
+  const fallbackFromName = makeValidInvitationHandle(params.displayName);
+  if (
+    fallbackFromName &&
+    fallbackFromName !== '@creator' &&
+    fallbackFromName !== '@creator-profile'
+  ) {
+    return fallbackFromName;
+  }
+
+  const channelId = String(params.channelId || '').trim();
+
+  if (channelId) {
+    return makeValidInvitationHandle(channelId, 'youtube-');
+  }
+
+  return '';
+}
+
+function getCreatorToLabel(params: {
+  selectedReport?: any;
+  raw?: any;
+  data?: any;
+  handle?: string | null;
+  displayName?: string;
+}) {
+  const safeHandle = getSafeCreatorHandle(params);
+
+  if (safeHandle) return safeHandle;
+
+  const name = String(
+    params.displayName ||
+      params.selectedReport?.name ||
+      params.selectedReport?.fullname ||
+      params.selectedReport?.channelName ||
+      params.raw?.title ||
+      params.raw?.profile?.title ||
+      params.raw?.profile?.channelName ||
+      params.data?.title ||
+      params.data?.profile?.title ||
+      params.data?.profile?.channelName ||
+      ''
+  ).trim();
+
+  if (name && !isYouTubeChannelId(name)) return name;
+
+  return 'Creator';
 }
 
 function pickFirstArray(...candidates: any[]): any[] {
@@ -3003,127 +3178,16 @@ export const DetailPanel = React.memo<DetailPanelProps>(
     useEffect(() => {
       if (!open) {
         setHasAnyEmail(null);
+        setCheckingEmail(false);
         return;
       }
 
-      const normalizedPlatform = (platform ?? '').toLowerCase() as Platform;
-      if (
-        !normalizedPlatform ||
-        !['youtube', 'instagram', 'tiktok'].includes(normalizedPlatform)
-      ) {
-        setHasAnyEmail(null);
-        return;
-      }
-
-      const rawHandle = handle ? String(handle).trim() : '';
-      const safeHandle = rawHandle
-        ? '@' + rawHandle.replace(/^@/, '').trim().toLowerCase()
-        : '';
-
-      if (!safeHandle || !/^[A-Za-z0-9._-]+$/.test(safeHandle.replace(/^@/, ''))) {
-        setHasAnyEmail(null);
-        return;
-      }
-
-      let cancelled = false;
-      setCheckingEmail(true);
-
-      (async () => {
-        try {
-          const { email } = await resolveCreatorEmail(safeHandle, normalizedPlatform);
-          if (!cancelled) {
-            setHasAnyEmail(!!email);
-          }
-        } catch (err) {
-          console.error('Failed to pre-check email status', err);
-          if (!cancelled) {
-            setHasAnyEmail(null);
-          }
-        } finally {
-          if (!cancelled) {
-            setCheckingEmail(false);
-          }
-        }
-      })();
-
-      return () => {
-        cancelled = true;
-      };
-    }, [open, handle, platform]);
-
-    useEffect(() => {
-      if (!open || !brandId) {
-        setInvitedCampaignIds(new Set());
-        return;
-      }
-
-      const rawPlatformValue = String(platform ?? '').toLowerCase();
-
-      if (!['youtube', 'instagram', 'tiktok'].includes(rawPlatformValue)) {
-        setInvitedCampaignIds(new Set());
-        return;
-      }
-
-      const normalizedPlatform = normalizePlatform(platform);
-      const rawHandle = handle ? String(handle).trim() : '';
-      const safeHandle = rawHandle
-        ? rawHandle.startsWith('@')
-          ? rawHandle.toLowerCase()
-          : `@${rawHandle.toLowerCase()}`
-        : '';
-
-      if (!safeHandle || !/^[A-Za-z0-9._-]+$/.test(safeHandle.replace(/^@/, ''))) {
-        setInvitedCampaignIds(new Set());
-        return;
-      }
-
-      let cancelled = false;
-
-      (async () => {
-        try {
-          setCheckingInvitation(true);
-
-          const resp = await post<InvitationListResp>('/newinvitations/list', {
-            brandId,
-            handle: safeHandle,
-            platform: normalizedPlatform,
-            status: 'invited',
-            page: 1,
-            limit: 200,
-          });
-
-          if (cancelled) return;
-
-          const invitedIds = new Set(
-            (Array.isArray(resp?.data) ? resp.data : [])
-              .filter((item) => String(item?.status || '').toLowerCase() === 'invited')
-              .map(getInvitationCampaignId)
-              .filter(Boolean)
-          );
-
-          setInvitedCampaignIds(invitedIds);
-
-          setSelectedCampaignIds((prev) => {
-            if (campaignId) return [campaignId];
-            return prev.filter((id) => !invitedIds.has(id));
-          });
-        } catch (err) {
-          console.error('Failed to fetch invitation list', err);
-
-          if (!cancelled) {
-            setInvitedCampaignIds(new Set());
-          }
-        } finally {
-          if (!cancelled) {
-            setCheckingInvitation(false);
-          }
-        }
-      })();
-
-      return () => {
-        cancelled = true;
-      };
-    }, [open, brandId, handle, platform, campaignId]);
+      // New invitation flow:
+      // Do not fetch or expose influencer email on frontend.
+      // Email is resolved privately in backend by channelId when invitation is submitted.
+      setHasAnyEmail(null);
+      setCheckingEmail(false);
+    }, [open]);
 
     const formattedLastUpdated = lastUpdatedAt
       ? new Date(lastUpdatedAt).toLocaleString()
@@ -3248,17 +3312,158 @@ export const DetailPanel = React.memo<DetailPanelProps>(
       youtubeMediaKitQueryValues.country,
     ]);
 
-    const getActiveSafeHandle = () => {
-      const rawHandle = String(
-        selectedReport?.handle ?? selectedReport?.username ?? handle ?? ''
+    const getActiveYoutubeChannelId = (preferDraft = false) => {
+      return String(
+        (preferDraft ? emailDraft?.channelId : '') ||
+          youtubeChannelIdForPanel ||
+          youtubeChannelIdProp ||
+          queryChannelId ||
+          (selectedReport as any)?.channelId ||
+          (selectedReport as any)?.youtubeChannelId ||
+          selectedReport?.modashId ||
+          (raw as any)?.channelId ||
+          (raw as any)?.userId ||
+          (raw as any)?.profile?.channelId ||
+          (raw as any)?.profile?.userId ||
+          (data as any)?.channelId ||
+          (data as any)?.profile?.channelId ||
+          (data as any)?.profile?.userId ||
+          ''
       ).trim();
+    };
 
-      return rawHandle
-        ? `@${rawHandle.replace(/^@/, '').trim().toLowerCase()}`
-        : '';
+    const displayName = String(
+      youtubeMediaKit?.creatorOverview?.creatorName ||
+        youtubeMediaKit?.creatorOverview?.channelName ||
+        selectedReport?.name ||
+        selectedReport?.fullname ||
+        selectedReport?.username ||
+        handle ||
+        'Creator profile'
+    ).trim();
+
+    const displayHandle = getSafeCreatorHandle({
+      selectedReport,
+      raw,
+      data,
+      handle,
+    });
+
+    const editorToLabel = getCreatorToLabel({
+      selectedReport,
+      raw,
+      data,
+      handle,
+      displayName,
+    });
+
+    const getActiveSafeHandle = () => {
+      return getBackendInvitationHandle({
+        selectedReport,
+        raw,
+        data,
+        handle,
+        displayName,
+        editorToLabel,
+        channelId: getActiveYoutubeChannelId(true),
+      });
     };
 
     const getActivePlatform = () => activePlatformKey as Platform;
+
+    useEffect(() => {
+      if (!open || !brandId) {
+        setInvitedCampaignIds(new Set());
+        return;
+      }
+
+      const normalizedPlatform = getActivePlatform();
+
+      if (normalizedPlatform !== 'youtube') {
+        setInvitedCampaignIds(new Set());
+        return;
+      }
+
+      const activeYoutubeChannelId = getActiveYoutubeChannelId(false);
+
+      const safeHandle = getBackendInvitationHandle({
+        selectedReport,
+        raw,
+        data,
+        handle,
+        displayName,
+        editorToLabel,
+        channelId: activeYoutubeChannelId,
+      });
+
+      if (
+        !safeHandle ||
+        !/^[A-Za-z0-9._-]+$/.test(safeHandle.replace(/^@/, ''))
+      ) {
+        setInvitedCampaignIds(new Set());
+        return;
+      }
+
+      let cancelled = false;
+
+      (async () => {
+        try {
+          setCheckingInvitation(true);
+
+          const resp = await post<InvitationListResp>('/newinvitations/list', {
+            brandId,
+            handle: safeHandle,
+            platform: 'youtube',
+            status: 'invited',
+            page: 1,
+            limit: 200,
+          });
+
+          if (cancelled) return;
+
+          const invitedIds = new Set(
+            (Array.isArray(resp?.data) ? resp.data : [])
+              .filter((item) => String(item?.status || '').toLowerCase() === 'invited')
+              .map(getInvitationCampaignId)
+              .filter(Boolean)
+          );
+
+          setInvitedCampaignIds(invitedIds);
+
+          setSelectedCampaignIds((prev) => {
+            if (campaignId) return [campaignId];
+            return prev.filter((id) => !invitedIds.has(id));
+          });
+        } catch (err) {
+          console.error('Failed to fetch invitation list', err);
+
+          if (!cancelled) {
+            setInvitedCampaignIds(new Set());
+          }
+        } finally {
+          if (!cancelled) {
+            setCheckingInvitation(false);
+          }
+        }
+      })();
+
+      return () => {
+        cancelled = true;
+      };
+    }, [
+      open,
+      brandId,
+      handle,
+      campaignId,
+      selectedReport,
+      raw,
+      data,
+      displayName,
+      editorToLabel,
+      youtubeChannelIdForPanel,
+      youtubeChannelIdProp,
+      queryChannelId,
+    ]);
 
     const activeAvailableProfiles = useMemo<InfluencerReport[]>(() => {
       if (selectedLookalikeReport) return [selectedLookalikeReport];
@@ -3945,28 +4150,13 @@ export const DetailPanel = React.memo<DetailPanelProps>(
       !checkingInvitation &&
       !isCurrentInviteAlreadySent;
 
-    const effectiveHasEmail =
-      hasAnyEmail !== null ? hasAnyEmail : emailExists === true;
+    const effectiveHasEmail = false;
 
     const ctaTitle = hasUserId
       ? isCurrentInviteAlreadySent
         ? 'Already invited for this campaign'
-        : effectiveHasEmail
-          ? 'Message this creator'
-          : 'Send invitation to collect email'
+        : 'Send invitation'
       : 'Profile not ready';
-
-    const displayName =
-      selectedReport?.name ??
-      selectedReport?.fullname ??
-      selectedReport?.username ??
-      handle ??
-      'Creator profile';
-
-    const displayHandle =
-      selectedReport?.handle ??
-      (handle && (handle.startsWith('@') ? handle : `@${handle}`)) ??
-      '';
 
     const handleRefreshData = async (e: React.MouseEvent) => {
       e.preventDefault();
@@ -4105,8 +4295,6 @@ export const DetailPanel = React.memo<DetailPanelProps>(
       chosenCampaignIds?: string[],
       editorPayload?: EmailEditorPayload
     ) => {
-      const safeHandle = getActiveSafeHandle();
-
       if (!brandId) {
         await Swal.fire(
           'Missing brand',
@@ -4116,20 +4304,12 @@ export const DetailPanel = React.memo<DetailPanelProps>(
         return;
       }
 
-      const normalizedPlatform = (platform ?? '').toLowerCase() as Platform;
+      const normalizedPlatform = getActivePlatform();
 
-      if (
-        !normalizedPlatform ||
-        !['youtube', 'instagram', 'tiktok'].includes(normalizedPlatform)
-      ) {
-        await Swal.fire('Unsupported platform', 'Unsupported or missing platform.', 'warning');
-        return;
-      }
-
-      if (!safeHandle || !/^[A-Za-z0-9._-]+$/.test(safeHandle.replace(/^@/, ''))) {
+      if (normalizedPlatform !== 'youtube') {
         await Swal.fire(
-          'Invalid handle',
-          'Invalid or missing handle to send invitation.',
+          'Unsupported platform',
+          'Only YouTube invitation flow is supported here.',
           'warning'
         );
         return;
@@ -4148,107 +4328,99 @@ export const DetailPanel = React.memo<DetailPanelProps>(
         return;
       }
 
+      const activeYoutubeChannelId = getActiveYoutubeChannelId(true);
+
+      if (!activeYoutubeChannelId) {
+        await Swal.fire(
+          'Missing channel ID',
+          'Could not send invitation because YouTube channelId was not found.',
+          'warning'
+        );
+        return;
+      }
+
+      const safeHandle = getBackendInvitationHandle({
+        selectedReport,
+        raw,
+        data,
+        handle,
+        displayName,
+        editorToLabel: emailDraft?.toLabel || editorToLabel,
+        channelId: activeYoutubeChannelId,
+      });
+
+      if (
+        !safeHandle ||
+        !/^[A-Za-z0-9._-]+$/.test(safeHandle.replace(/^@/, ''))
+      ) {
+        await Swal.fire(
+          'Invalid handle',
+          'Could not create a valid creator handle. Please refresh this creator profile and try again.',
+          'warning'
+        );
+        return;
+      }
+
       const creatorUserId = getInfluencerUserIdForInvitation({
         selectedReport,
         raw,
         data,
       });
 
-      if (!creatorUserId) {
-        await Swal.fire(
-          'Missing user ID',
-          'Could not send invitation because influencer userId was not found.',
-          'warning'
-        );
-        return;
-      }
-
       try {
         setSendingInvite(true);
 
-        const recipientEmail = String(
-          editorPayload?.recipientEmail ||
-          editorPayload?.influencerEmail ||
-          editorPayload?.creatorEmail ||
-          editorPayload?.businessEmail ||
-          editorPayload?.contactEmail ||
-          editorPayload?.to ||
-          emailDraft?.toEmail ||
-          ''
-        ).trim();
-
         const fromEmail = String(
           editorPayload?.fromEmail ||
-          emailDraft?.fromEmail ||
-          ''
+            emailDraft?.fromEmail ||
+            ''
         ).trim();
 
         const fromName = String(
           editorPayload?.fromName ||
-          emailDraft?.fromName ||
-          'CollabGlam'
-        ).trim();
-
-        const activeYoutubeChannelId = String(
-          youtubeChannelIdForPanel ||
-          youtubeChannelIdProp ||
-          queryChannelId ||
-          creatorUserId ||
-          ''
+            emailDraft?.fromName ||
+            'CollabGlam'
         ).trim();
 
         const resp = await post<InvitationCreateResp>('/newinvitations/create', {
           handle: safeHandle,
-          platform: normalizedPlatform,
+          platform: 'youtube',
           brandId,
           status: 'invited',
 
           campaignIds,
-
-          userId: creatorUserId,
-          modashUserId: creatorUserId,
-
           campaignName,
 
-          ...(activeYoutubeChannelId
-            ? {
-              channelId: activeYoutubeChannelId,
-              youtubeChannelId: activeYoutubeChannelId,
-            }
-            : {}),
+          ...(creatorUserId ? { userId: creatorUserId } : {}),
+
+          // Backend privately fetches the real email from InfoMediaKit using this.
+          channelId: activeYoutubeChannelId,
+          youtubeChannelId: activeYoutubeChannelId,
 
           ...(emailDraft?.missingEmailId
             ? {
-              missingEmailId: emailDraft.missingEmailId,
-            }
+                missingEmailId: emailDraft.missingEmailId,
+              }
             : {}),
 
-          ...(recipientEmail
-            ? {
-              recipientEmail,
-              influencerEmail: recipientEmail,
-              creatorEmail: recipientEmail,
-              businessEmail: recipientEmail,
-              contactEmail: recipientEmail,
-            }
-            : {}),
-
+          // Do not send recipientEmail/influencerEmail/creatorEmail from frontend.
           emailTemplate: editorPayload
             ? {
-              subject: editorPayload.subject,
-              body: editorPayload.body,
-              htmlBody: editorPayload.htmlBody,
-              attachments: editorPayload.attachments,
-              fromEmail,
-              fromName,
-            }
+                subject: editorPayload.subject,
+                body: editorPayload.body,
+                htmlBody: editorPayload.htmlBody,
+                attachments: editorPayload.attachments,
+                fromEmail,
+                fromName,
+              }
             : undefined,
         });
 
         if (!resp || resp.status === 'error') {
           await Swal.fire(
             'Something went wrong',
-            resp?.message || 'We couldn’t send the invitation. Please try again in a moment.',
+            resp?.message ||
+              'We couldn’t send the invitation. Please try again in a moment.',
             'error'
           );
           return;
@@ -4288,29 +4460,35 @@ export const DetailPanel = React.memo<DetailPanelProps>(
 
         const uniqueSkipReason = [...new Set(emailSkipReasons)].filter(Boolean)[0];
 
-        const emailSummary = editorPayload
-          ? emailSentCount > 0
+        const emailSummary =
+          emailSentCount > 0
             ? `${emailSentCount} email${emailSentCount > 1 ? 's' : ''} sent.`
-            : uniqueSkipReason || 'Invitation saved, but email was not sent.'
-          : '';
+            : uniqueSkipReason ||
+              'Invitation saved. Email was not found, so creator was added to missing email.';
 
         if (savedCount > 0 && existsCount === 0) {
           await Swal.fire(
             emailSentCount > 0 ? 'Invitation email sent' : 'Invitation saved',
-            `Processed ${savedCount} campaign${savedCount > 1 ? 's' : ''}. ${emailSummary}`.trim(),
-            emailSentCount > 0 || !editorPayload ? 'success' : 'warning'
+            `Processed ${savedCount} campaign${
+              savedCount > 1 ? 's' : ''
+            }. ${emailSummary}`.trim(),
+            emailSentCount > 0 ? 'success' : 'warning'
           );
         } else if (savedCount === 0 && existsCount > 0) {
           await Swal.fire(
             emailSentCount > 0 ? 'Invitation email sent' : 'Already invited',
-            `This creator was already invited for ${existsCount} campaign${existsCount > 1 ? 's' : ''}. ${emailSummary}`.trim(),
+            `This creator was already invited for ${existsCount} campaign${
+              existsCount > 1 ? 's' : ''
+            }. ${emailSummary}`.trim(),
             emailSentCount > 0 ? 'success' : 'info'
           );
         } else {
           await Swal.fire(
             'Invitations processed',
-            `${savedCount} new invitation${savedCount > 1 ? 's' : ''} processed, ${existsCount} already existed. ${emailSummary}`.trim(),
-            emailSentCount > 0 || !editorPayload ? 'success' : 'warning'
+            `${savedCount} new invitation${
+              savedCount > 1 ? 's' : ''
+            } processed, ${existsCount} already existed. ${emailSummary}`.trim(),
+            emailSentCount > 0 ? 'success' : 'warning'
           );
         }
 
@@ -4329,7 +4507,6 @@ export const DetailPanel = React.memo<DetailPanelProps>(
     };
 
     const handleTemplatePreview = async (chosenCampaignIds?: string[]) => {
-      const safeHandle = getActiveSafeHandle();
       const normalizedPlatform = getActivePlatform();
 
       if (!brandId) {
@@ -4341,22 +4518,17 @@ export const DetailPanel = React.memo<DetailPanelProps>(
         return;
       }
 
-      if (!normalizedPlatform || !['youtube', 'instagram', 'tiktok'].includes(normalizedPlatform)) {
-        await Swal.fire('Unsupported platform', 'Unsupported or missing platform.', 'warning');
-        return;
-      }
-
-      if (!safeHandle || !/^[A-Za-z0-9._-]+$/.test(safeHandle.replace(/^@/, ''))) {
+      if (normalizedPlatform !== 'youtube') {
         await Swal.fire(
-          'Invalid handle',
-          'Invalid or missing handle to preview invitation.',
+          'Unsupported platform',
+          'Only YouTube invitation flow is supported here.',
           'warning'
         );
         return;
       }
 
       const campaignIds = Array.isArray(chosenCampaignIds)
-        ? chosenCampaignIds.filter(Boolean)
+        ? [...new Set(chosenCampaignIds.filter(Boolean))]
         : [];
 
       if (!campaignIds.length) {
@@ -4368,66 +4540,110 @@ export const DetailPanel = React.memo<DetailPanelProps>(
         return;
       }
 
-      try {
-        setSendingInvite(true);
-        const previewResp = await post<CampaignInvitationTemplatePreviewResp>(
-          '/campaign-invitation/template-preview',
-          {
-            brandId,
-            campaignIds,
-            campaignName,
-            platform: normalizedPlatform,
-            handle: safeHandle,
-          }
-        );
+      const activeYoutubeChannelId = getActiveYoutubeChannelId(false);
 
-        if (!previewResp || previewResp.status !== 'success') {
-          await Swal.fire(
-            'Preview unavailable',
-            previewResp?.message || 'Could not generate the invitation preview.',
-            'error'
-          );
-          return;
-        }
-
-        const fromEmail = String(previewResp.fromEmail || '').trim();
-        const fromName = getFromNameFromEmail(fromEmail);
-        const resolvedDraft = buildResolvedTemplateDraft(
-          previewResp,
-          displayName,
-          displayHandle || safeHandle,
-          fromName
-        );
-
-        const resolvedToEmail = String(previewResp.toEmail || "").trim();
-
-        const nextDraft: EmailDraftState = {
-          campaignIds,
-          fromEmail,
-          fromName,
-          toLabel: String(resolvedToEmail || displayHandle || safeHandle).trim(),
-          toEmail: resolvedToEmail,
-          missingEmailId: previewResp.missingEmailId || null,
-          subject: resolvedDraft.subject,
-          initialBody: resolvedDraft.textBody,
-          initialHtmlBody: resolvedDraft.htmlBody,
-        };
-
-        setEmailDraft(nextDraft);
-        setCampaignPickerOpen(false);
-        setEmailEditorOpen(true);
-      } catch (err: any) {
-        console.error('Template preview failed', err);
+      if (!activeYoutubeChannelId) {
         await Swal.fire(
-          'Preview unavailable',
-          err?.response?.data?.message ||
-          err?.message ||
-          'Could not generate the invitation preview.',
-          'error'
+          'Missing channel ID',
+          'Could not prepare invitation because YouTube channelId was not found.',
+          'warning'
         );
-      } finally {
-        setSendingInvite(false);
+        return;
       }
+
+      const safeHandle = getBackendInvitationHandle({
+        selectedReport,
+        raw,
+        data,
+        handle,
+        displayName,
+        editorToLabel,
+        channelId: activeYoutubeChannelId,
+      });
+
+      if (
+        !safeHandle ||
+        !/^[A-Za-z0-9._-]+$/.test(safeHandle.replace(/^@/, ''))
+      ) {
+        await Swal.fire(
+          'Invalid handle',
+          'Could not create a valid creator handle. Please refresh this creator profile and try again.',
+          'warning'
+        );
+        return;
+      }
+
+      const selectedCampaignTitles = campaignIds
+        .map((id) => {
+          const matchedCampaign = brandCampaigns.find(
+            (item) => String(item.campaignId) === String(id)
+          );
+
+          return String(
+            matchedCampaign?.campaignTitle ||
+              (String(id) === String(campaignId) ? campaignName : '') ||
+              ''
+          ).trim();
+        })
+        .filter(Boolean);
+
+      const firstCampaignTitle =
+        selectedCampaignTitles[0] ||
+        campaignName ||
+        'your campaign';
+
+      const campaignTitleText =
+        selectedCampaignTitles.length > 1
+          ? selectedCampaignTitles.join(', ')
+          : firstCampaignTitle;
+
+      const creatorName =
+        displayName && !isYouTubeChannelId(displayName)
+          ? displayName
+          : editorToLabel.replace(/^@/, '') || 'Creator';
+
+      const fromName = 'CollabGlam';
+      const fromEmail = '';
+
+      const subject = `Invitation to Collaborate - ${firstCampaignTitle}`;
+
+      const initialBody = `Dear ${creatorName},
+
+I hope you are doing well.
+
+We would like to invite you to collaborate with us for ${campaignTitleText}.
+
+Campaign Details
+
+Campaign Name: ${campaignTitleText}
+Platform: YouTube
+
+Please review this invitation and let us know if you are interested. More campaign details will be shared by the brand team.
+
+Warm regards,
+Team CollabGlam`;
+
+      const nextDraft: EmailDraftState = {
+        campaignIds,
+        fromEmail,
+        fromName,
+
+        // Show creator handle/name only. Never show real email or UC channel ID here.
+        toLabel: editorToLabel,
+        toEmail: '',
+
+        // Keep channelId privately for backend email lookup.
+        channelId: activeYoutubeChannelId,
+        missingEmailId: null,
+
+        subject,
+        initialBody,
+        initialHtmlBody: plainTextToHtml(initialBody),
+      };
+
+      setEmailDraft(nextDraft);
+      setCampaignPickerOpen(false);
+      setEmailEditorOpen(true);
     };
 
     const handleCampaignPickerToggle = async (e: React.MouseEvent) => {
@@ -4590,9 +4806,6 @@ export const DetailPanel = React.memo<DetailPanelProps>(
 
       if (!canAct || sendingInvite) return;
 
-      const safeHandle = getActiveSafeHandle();
-      const normalizedPlatform = getActivePlatform();
-
       if (!brandId) {
         await Swal.fire(
           'Missing brand',
@@ -4602,22 +4815,12 @@ export const DetailPanel = React.memo<DetailPanelProps>(
         return;
       }
 
-      if (
-        !normalizedPlatform ||
-        !['youtube', 'instagram', 'tiktok'].includes(normalizedPlatform)
-      ) {
+      const normalizedPlatform = getActivePlatform();
+
+      if (normalizedPlatform !== 'youtube') {
         await Swal.fire(
           'Unsupported platform',
-          'Unsupported or missing platform.',
-          'warning'
-        );
-        return;
-      }
-
-      if (!safeHandle || !/^[A-Za-z0-9._-]+$/.test(safeHandle.replace(/^@/, ''))) {
-        await Swal.fire(
-          'Invalid handle',
-          'Invalid or missing handle to send invitation.',
+          'Only YouTube invitation flow is supported here.',
           'warning'
         );
         return;
@@ -4634,99 +4837,7 @@ export const DetailPanel = React.memo<DetailPanelProps>(
         return;
       }
 
-      const creatorUserId = getInfluencerUserIdForInvitation({
-        selectedReport,
-        raw,
-        data,
-      });
-
-      if (!creatorUserId) {
-        await Swal.fire(
-          'Missing user ID',
-          'Could not send invitation because influencer userId was not found.',
-          'warning'
-        );
-        return;
-      }
-
-      try {
-        setSendingInvite(true);
-
-        const resp = await post<InvitationCreateResp>('/newinvitations/create', {
-          handle: safeHandle,
-          platform: normalizedPlatform,
-          brandId,
-          status: 'invited',
-
-          // New backend accepts campaignIds even for one campaign
-          campaignIds,
-
-          // Store influencer id
-          userId: creatorUserId,
-          modashUserId: creatorUserId,
-
-          campaignName,
-        });
-
-        if (!resp || resp.status === 'error') {
-          await Swal.fire(
-            'Something went wrong',
-            resp?.message || 'We couldn’t send the invitation. Please try again in a moment.',
-            'error'
-          );
-          return;
-        }
-
-        const savedCount =
-          Number(resp.createdCount ?? 0) ||
-          (resp.status === 'saved' ? campaignIds.length : 0);
-
-        const existsCount =
-          Number(resp.existingCount ?? 0) ||
-          (resp.status === 'exists' ? campaignIds.length : 0);
-
-        if (savedCount > 0) {
-          await Swal.fire(
-            'Invitation sent',
-            `Invitation saved for ${savedCount} campaign${savedCount > 1 ? 's' : ''}.`,
-            'success'
-          );
-        } else if (existsCount > 0) {
-          await Swal.fire(
-            'Already invited',
-            `This creator is already invited for ${existsCount} campaign${existsCount > 1 ? 's' : ''}.`,
-            'info'
-          );
-        } else {
-          await Swal.fire(
-            'Invitation processed',
-            resp.message || 'Invitation processed successfully.',
-            'success'
-          );
-        }
-
-        setInvitedCampaignIds((prev) => {
-          const next = new Set(prev);
-          campaignIds.forEach((id) => next.add(id));
-          return next;
-        });
-
-        setSelectedCampaignIds((prev) =>
-          prev.filter((id) => !campaignIds.includes(id))
-        );
-
-        router.push('/brand/invited');
-      } catch (err: any) {
-        const msg =
-          err?.response?.data?.message ||
-          err?.message ||
-          'Failed to send invitation';
-
-        console.error(err);
-        await Swal.fire('Error', msg, 'error');
-      } finally {
-        setSendingInvite(false);
-      }
+      await handleTemplatePreview(campaignIds);
     };
 
     const handleCopy = async () => {
@@ -4963,96 +5074,11 @@ export const DetailPanel = React.memo<DetailPanelProps>(
                           if (isCurrentInviteAlreadySent) return;
 
                           if (activeInviteCampaignIds.length) {
-                            const selectedCampaign =
-                              activeCampaignForPanel ||
-                              brandCampaigns.find(
-                                (item) => item.campaignId === activeInviteCampaignIds[0]
-                              );
-
-                            const proxyEmail =
-                              localStorage.getItem('brandProxyEmail') ||
-                              localStorage.getItem('proxyEmail') ||
-                              localStorage.getItem('fromEmail') ||
-                              '';
-
-                            const brandName =
-                              localStorage.getItem('brandName') ||
-                              'CollabGlam';
-
-                            const campaignTitle =
-                              selectedCampaign?.campaignTitle ||
-                              campaignName ||
-                              'your campaign';
-
-                            const subject = `Invitation to Collaborate - ${brandName}`;
-
-                            const initialBody = `Dear ${displayName || displayHandle || 'Creator'},
-
-I hope you are doing well.
-
-We are reaching out to formally invite you to collaborate with ${brandName} for our upcoming campaign, "${campaignTitle}". Based on your creative work and audience alignment, we believe you would be an excellent fit for this project.
-
-Campaign Details
-
-Campaign Name: ${campaignTitle}
-Brand: ${brandName}
-Objective:
-Deliverables Required:
-Compensation:
-Campaign Timeline:
-
-To proceed, please review the full brief using the button below.
-
-If you have any questions or need further clarification, feel free to contact the brand or reach out to CollabGlam Support.
-
-We look forward to the opportunity of working together and hope to have you onboard for this campaign.
-
-Warm regards,
-Team CollabGlam`;
-
-                            const initialHtmlBody = `
-    <p>Dear ${displayName || displayHandle || 'Creator'},</p>
-    <p>I hope you are doing well.</p>
-    <p>
-      We are reaching out to formally invite you to collaborate with <strong>${brandName}</strong>
-      for our upcoming campaign, <strong>"${campaignTitle}"</strong>. Based on your creative work and
-      audience alignment, we believe you would be an excellent fit for this project.
-    </p>
-    <h3>Campaign Details</h3>
-    <p><strong>Campaign Name:</strong> ${campaignTitle}</p>
-    <p><strong>Brand:</strong> ${brandName}</p>
-    <p><strong>Objective:</strong></p>
-    <p><strong>Deliverables Required:</strong></p>
-    <p><strong>Compensation:</strong></p>
-    <p><strong>Campaign Timeline:</strong></p>
-    <p>To proceed, please review the full brief using the button below.</p>
-    <p>
-      If you have any questions or need further clarification, feel free to contact the brand
-      or reach out to CollabGlam Support.
-    </p>
-    <p>
-      We look forward to the opportunity of working together and hope to have you onboard for this campaign.
-    </p>
-    <p>Warm regards,<br /><strong>Team CollabGlam</strong></p>
-  `;
-
-                            setEmailDraft({
-                              campaignIds: activeInviteCampaignIds,
-                              fromEmail: proxyEmail,
-                              fromName: brandName,
-                              toLabel: displayHandle || handle || '',
-                              toEmail: '',
-                              missingEmailId: null,
-                              subject,
-                              initialBody,
-                              initialHtmlBody,
-                            });
-
-                            setCampaignPickerOpen(false);
-                            setEmailEditorOpen(true);
+                            void handleTemplatePreview(activeInviteCampaignIds);
                             return;
                           }
-                          effectiveHasEmail ? handleMessageNow(e) : handleSendInvitation(e);
+
+                          setCampaignPickerOpen((prev) => !prev);
                         }}
                         disabled={!canAct}
                         title={ctaTitle}
@@ -5125,7 +5151,7 @@ Team CollabGlam`;
                         onSearchChange={setCampaignSearch}
                         loading={campaignsLoading || checkingInvitation}
                         sending={sendingInvite}
-                        onSend={finalizeCampaignInvitations}
+                        onSend={handleTemplatePreview}
                       />
                     ) : null}
                   </div>
@@ -5281,8 +5307,8 @@ Team CollabGlam`;
         <EmailEditor
           open={emailEditorOpen}
           onClose={() => setEmailEditorOpen(false)}
-          toLabel={emailDraft?.toLabel || displayHandle || ''}
-          toEmail={emailDraft?.toEmail || ''}
+          toLabel={emailDraft?.toLabel || editorToLabel}
+          toEmail=""
           fromName={emailDraft?.fromName || 'CollabGlam'}
           fromEmail={emailDraft?.fromEmail || ''}
           toAvatar={selectedReport?.picture || primaryReport?.picture || ''}

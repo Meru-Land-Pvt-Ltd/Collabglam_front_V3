@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import {
   Award,
   BadgeCheck,
@@ -25,6 +25,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
+import { DetailPanel } from "./DetailPanel";
 
 type CreatorScores = {
   sponsorshipScore?: number;
@@ -202,6 +203,11 @@ type BrandMediaKitData = {
   contact?: {
     hasContactInfo?: boolean;
     maskedEmail?: string;
+    email?: string;
+    rawEmail?: string;
+    youtubeAboutEmail?: string;
+    emails?: string[];
+    totalEmails?: string[];
     website?: string;
     socialLinks?: { platform: string; url: string }[];
   };
@@ -242,7 +248,7 @@ type CountryOption = {
 };
 
 function getRuntimeApiBaseUrl() {
-  const explicit = String(process.env.NEXT_PUBLIC_API_URL || "").trim();
+  const explicit = String(process.env.NEXT_PUBLIC_API_BASE_URL || "").trim();
   if (explicit) return explicit;
 
   if (typeof window !== "undefined") {
@@ -411,6 +417,29 @@ function getProxyImageUrl(url?: string) {
   return getApiUrl(`/youtube-data/image-proxy?url=${encodeURIComponent(raw)}`);
 }
 
+function maskEmailFromFrontend(email?: string | null) {
+  const raw = String(email || "").trim();
+  if (!raw || !raw.includes("@")) return "";
+
+  const [, domain] = raw.split("@");
+  if (!domain) return "";
+
+  return `xxxxxxxx@${domain.trim()}`;
+}
+
+function getFrontendMaskedMediaKitEmail(contact?: BrandMediaKitData["contact"] | null) {
+  const candidate =
+    contact?.rawEmail ||
+    contact?.email ||
+    contact?.youtubeAboutEmail ||
+    contact?.maskedEmail ||
+    contact?.totalEmails?.[0] ||
+    contact?.emails?.[0] ||
+    "";
+
+  return maskEmailFromFrontend(candidate);
+}
+
 function getInitials(name?: string) {
   const value = String(name || "?").trim();
   const words = value.split(/\s+/).filter(Boolean);
@@ -482,10 +511,7 @@ function VideoThumbnail({ src, title }: { src?: string; title?: string }) {
 }
 
 
-
-const LOADING_ANIMALS = ["💻", "📱", "⚡", "🤖", "🎧", "🔍"];
-
-const DEFAULT_CAMPAIGN_LOADING_BACKGROUNDS = ["✨", "🎯", "🤝", "📊", "🔎", "⚡"];
+const DEFAULT_CAMPAIGN_LOADING_BACKGROUNDS = ["🎥", "🎯", "🤝", "📊", "✨", "🔍"];
 
 function getCampaignLoadingBackgrounds(topic?: string) {
   const value = String(topic || "").toLowerCase();
@@ -520,11 +546,11 @@ function getCampaignLoadingBackgrounds(topic?: string) {
 function getCreatorSearchLoadingMessages(topicLabel: string) {
   return [
     `Hold on, we are searching creators for ${topicLabel}.`,
-    "Our AI scout is sniffing out matching YouTube creators.",
-    "Checking recent uploads, authenticity, and brand fit.",
-    "Matching country, creator tier, and campaign signals.",
-    "Filtering out weak matches so your shortlist stays useful.",
-    "Almost ready — preparing your creator recommendations.",
+    "Scanning YouTube channels and creator signals.",
+    "Checking recent uploads and audience authenticity.",
+    "Matching tier, country, and campaign relevance.",
+    "Filtering creators with stronger brand fit.",
+    "Almost ready — polishing your creator shortlist.",
   ];
 }
 
@@ -532,13 +558,13 @@ function CreatorSearchLoader({ topic }: { topic?: string }) {
   const backgrounds = useMemo(() => getCampaignLoadingBackgrounds(topic), [topic]);
   const topicLabel = String(topic || "your campaign").trim() || "your campaign";
   const messages = useMemo(() => getCreatorSearchLoadingMessages(topicLabel), [topicLabel]);
-  const [frameIndex, setFrameIndex] = useState(0);
+  const [backgroundIndex, setBackgroundIndex] = useState(0);
   const [messageIndex, setMessageIndex] = useState(0);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
-      setFrameIndex((current) => (current + 1) % Math.max(backgrounds.length, LOADING_ANIMALS.length));
-    }, 1050);
+      setBackgroundIndex((current) => (current + 1) % backgrounds.length);
+    }, 950);
 
     return () => window.clearInterval(timer);
   }, [backgrounds.length]);
@@ -546,79 +572,107 @@ function CreatorSearchLoader({ topic }: { topic?: string }) {
   useEffect(() => {
     const timer = window.setInterval(() => {
       setMessageIndex((current) => (current + 1) % messages.length);
-    }, 2300);
+    }, 1850);
 
     return () => window.clearInterval(timer);
   }, [messages.length]);
 
-  const activeBackground = backgrounds[frameIndex % backgrounds.length] || "✨";
-  const activeAnimal = LOADING_ANIMALS[frameIndex % LOADING_ANIMALS.length] || "🦊";
+  const activeBackground = backgrounds[backgroundIndex] || "✨";
   const activeMessage = messages[messageIndex] || messages[0];
 
   return (
     <div className="px-6 py-20 text-center">
       <style jsx global>{`
-        @keyframes cgAiOrbit {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
+        @keyframes cgStaticMagnifierFloat {
+          0%, 100% {
+            transform: translateY(0) scale(1);
+          }
+          50% {
+            transform: translateY(-3px) scale(1.015);
+          }
         }
 
-        @keyframes cgAiPulse {
-          0%, 100% { transform: scale(0.96); opacity: 0.55; }
-          50% { transform: scale(1.08); opacity: 0.85; }
+        @keyframes cgStaticMagnifierScan {
+          0% {
+            transform: translateX(-108px);
+            opacity: 0;
+          }
+          15% {
+            opacity: 0.75;
+          }
+          85% {
+            opacity: 0.75;
+          }
+          100% {
+            transform: translateX(108px);
+            opacity: 0;
+          }
         }
 
-        @keyframes cgAiFloat {
-          0%, 100% { transform: translateY(0); }
-          50% { transform: translateY(-10px); }
+        @keyframes cgStaticMagnifierGlow {
+          0%, 100% {
+            opacity: 0.28;
+            transform: scale(0.94);
+          }
+          50% {
+            opacity: 0.48;
+            transform: scale(1.08);
+          }
         }
 
-        @keyframes cgAiScan {
-          0% { transform: translateX(-82px); opacity: 0; }
-          18%, 82% { opacity: 0.55; }
-          100% { transform: translateX(82px); opacity: 0; }
-        }
-
-        @keyframes cgAiTextFade {
-          0% { opacity: 0; transform: translateY(6px); }
-          18%, 82% { opacity: 1; transform: translateY(0); }
-          100% { opacity: 0; transform: translateY(-6px); }
+        @keyframes cgLoaderTextFade {
+          0% {
+            opacity: 0;
+            transform: translateY(5px);
+          }
+          18%, 82% {
+            opacity: 1;
+            transform: translateY(0);
+          }
+          100% {
+            opacity: 0;
+            transform: translateY(-4px);
+          }
         }
       `}</style>
 
-      <div className="mx-auto flex min-h-[300px] max-w-[760px] flex-col items-center justify-center">
-        <div className="relative mb-7 h-[178px] w-[178px]">
-          <div className="absolute inset-0 rounded-full bg-gradient-to-br from-[#fff7d8] via-[#f8f4ea] to-white shadow-[0_20px_60px_rgba(25,20,10,0.10)]" />
-          <div className="absolute inset-[14px] rounded-full border border-[#ead9b5] bg-white/80" style={{ animation: "cgAiPulse 2.2s ease-in-out infinite" }} />
-          <div className="absolute inset-[28px] rounded-full bg-[#fff8e6]" />
+      <div className="mx-auto flex min-h-[270px] max-w-[760px] flex-col items-center justify-center">
+        <div className="relative mb-8 h-[150px] w-[260px]">
+          <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-gradient-to-r from-transparent via-[#c9cbc9] to-transparent" />
+          <div className="absolute left-1/2 top-1/2 h-[126px] w-[126px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#e5e7e5] shadow-[0_18px_45px_rgba(0,0,0,0.12)]" />
+          <div
+            className="absolute left-1/2 top-1/2 h-[146px] w-[146px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#eef0ee]"
+            style={{ animation: "cgStaticMagnifierGlow 1.8s ease-in-out infinite" }}
+          />
 
-          <div className="absolute inset-0" style={{ animation: "cgAiOrbit 5.4s linear infinite" }}>
-            <span className="absolute left-1/2 top-0 h-3 w-3 -translate-x-1/2 rounded-full bg-[#d29b22] shadow-[0_0_16px_rgba(210,155,34,0.45)]" />
-            <span className="absolute bottom-5 left-4 h-2.5 w-2.5 rounded-full bg-[#4f8f5f] shadow-[0_0_16px_rgba(79,143,95,0.35)]" />
-            <span className="absolute bottom-5 right-4 h-2.5 w-2.5 rounded-full bg-[#c06f3d] shadow-[0_0_16px_rgba(192,111,61,0.35)]" />
-          </div>
-
-          <div className="absolute inset-[44px] overflow-hidden rounded-[32px] border border-[#ead7ad] bg-white shadow-[0_16px_35px_rgba(20,15,5,0.10)]" style={{ animation: "cgAiFloat 2.4s ease-in-out infinite" }}>
-            <div className="absolute inset-0 grid place-items-center text-[64px] opacity-[0.12] transition-all duration-500">
+          <div
+            className="absolute left-1/2 top-1/2 h-[110px] w-[110px] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-full border border-[#d7dad7] bg-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.6)]"
+            style={{ animation: "cgStaticMagnifierFloat 1.7s ease-in-out infinite" }}
+          >
+            <div className="absolute inset-0 grid place-items-center text-[56px] opacity-[0.14] transition-all duration-500">
               <span key={activeBackground}>{activeBackground}</span>
             </div>
-            <div className="absolute inset-0 bg-gradient-to-b from-white/20 via-transparent to-[#fff3c5]/50" />
-            <div className="absolute left-1/2 top-0 h-full w-[2px] bg-[#d39c27]/55 shadow-[0_0_18px_rgba(211,156,39,0.45)]" style={{ animation: "cgAiScan 1.7s ease-in-out infinite" }} />
-            <div className="absolute inset-0 grid place-items-center text-[54px] transition-all duration-500">
-              <span key={activeAnimal}>{activeAnimal}</span>
-            </div>
+
+            <div className="absolute left-1/2 top-1/2 h-[74px] w-[74px] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-[#dfe1df] bg-[#f7f8f7]/86" />
+
+            <div className="absolute left-1/2 top-1/2 h-[78px] w-[1px] -translate-y-1/2 bg-[#9ea29e]/70 shadow-[0_0_18px_rgba(120,124,120,0.36)]" style={{ animation: "cgStaticMagnifierScan 1.55s ease-in-out infinite" }} />
+
+            <Search className="absolute left-1/2 top-1/2 z-10 h-11 w-11 -translate-x-1/2 -translate-y-1/2 text-[#7b807b]" strokeWidth={2.2} />
           </div>
+
+          <span className="absolute left-[calc(50%+34px)] top-[calc(50%+38px)] h-[46px] w-[10px] rotate-[-45deg] rounded-full bg-[#7b807b] shadow-[0_8px_16px_rgba(0,0,0,0.12)]" />
         </div>
 
-      
-      
+        <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-[#9a907f]">
+          CollabGlam discovery engine
+        </p>
         <h3 className="mt-3 text-[22px] font-semibold text-black">
           Finding creators for {topicLabel}
         </h3>
         <p
           key={messageIndex}
-          className="mx-auto mt-3 max-w-[560px] text-sm leading-6 text-[#71685c]"
-          style={{ animation: "cgAiTextFade 2.25s ease-in-out both" }}
+          className="mx-auto mt-3 max-w-[520px] text-sm leading-6 text-[#71685c]"
+          style={{ animation: "cgLoaderTextFade 1.85s ease-in-out both" }}
         >
           {activeMessage}
         </p>
@@ -983,6 +1037,106 @@ function getTopScoreLabel(score?: number) {
   return "Needs Review";
 }
 
+
+function getBrandIdFromStorage() {
+  if (typeof window === "undefined") return "";
+
+  return String(
+    window.localStorage.getItem("brandId") ||
+      window.localStorage.getItem("brand_id") ||
+      window.localStorage.getItem("brandMongoId") ||
+      "",
+  ).trim();
+}
+
+function getYouTubeInviteHandle(creator?: YouTubeCreator | null) {
+  const value = String(
+    creator?.channelId ||
+      (creator as any)?.youtubeChannelId ||
+      creator?.channelName ||
+      "",
+  )
+    .replace(/^@/, "")
+    .replace(/\s+/g, "")
+    .trim();
+
+  return value || null;
+}
+
+function buildDetailPanelRawFromYouTubeCreator(creator?: YouTubeCreator | null) {
+  if (!creator) return null;
+
+  const channelId = String(creator.channelId || "").trim();
+  const safeHandle = getYouTubeInviteHandle(creator) || channelId;
+  const channelName = String(creator.channelName || safeHandle || "Creator").trim();
+  const subscribers = getSubs(creator);
+
+  return {
+    channelId,
+    youtubeChannelId: channelId,
+    userId: channelId,
+    platform: "youtube",
+    profile: {
+      channelId,
+      youtubeChannelId: channelId,
+      userId: channelId,
+      modashId: channelId,
+      username: safeHandle,
+      handle: safeHandle,
+      fullname: channelName,
+      name: channelName,
+      picture: creator.thumbnail,
+      url: creator.channelUrl,
+      provider: "youtube",
+      followers: subscribers,
+      subscribers,
+      avgViews: creator.avgViews,
+      averageViews: creator.avgViews,
+      avgLikes: creator.avgLikes,
+      avgComments: creator.avgComments,
+      engagementRate: creator.engagementRate,
+      country: creator.country || creator.estimatedAudienceCountry,
+      language: creator.primaryLanguage ? { name: creator.primaryLanguage } : undefined,
+      bio: creator.description || creator.channelDescription,
+      postsCount: creator.totalVideos || creator.totalLifetimeVideos,
+      stats: {
+        followers: { value: subscribers },
+        avgViews: { value: creator.avgViews },
+        avgLikes: { value: creator.avgLikes },
+        avgComments: { value: creator.avgComments },
+      },
+      audience: {
+        geoCountries: creator.estimatedAudienceCountry
+          ? [{ name: creator.estimatedAudienceCountry, weight: 1 }]
+          : [],
+        languages: creator.primaryLanguage
+          ? [{ code: creator.primaryLanguage, weight: 1 }]
+          : [],
+        interests: Array.isArray(creator.channelTags)
+          ? creator.channelTags.map((name) => ({ name, weight: 1 }))
+          : [],
+        credibility: Number(creator.scores?.authenticityScore || 0) / 100,
+      },
+      recentPosts: Array.isArray(creator.recentVideoTitles)
+        ? creator.recentVideoTitles.map((video) => ({
+            title: video.title,
+            text: video.description || video.title,
+            thumbnail: video.thumbnail,
+            image: video.thumbnail,
+            url: video.url,
+            views: video.views,
+            likes: video.likes,
+            comments: video.comments,
+            publishedAt: video.publishedAt,
+            createdAt: video.publishedAt,
+          }))
+        : [],
+      popularPosts: [],
+      sponsoredPosts: [],
+    },
+  };
+}
+
 function MiniStatCard({
   icon,
   label,
@@ -1126,12 +1280,13 @@ function MediaKitDrawer({
   const safety = mediaKit?.brandSafety;
   const prediction = mediaKit?.campaignPrediction;
   const contact = mediaKit?.contact;
+  const frontendMaskedEmail = getFrontendMaskedMediaKitEmail(contact);
   const recommendation = mediaKit?.collabGlamRecommendation;
   const topVideos = mediaKit?.topPerformingVideos || [];
   const fitScore = scoreOrZero(scores?.campaignFitScore || scores?.relevancyScore);
   const hasContact = Boolean(
     contact?.hasContactInfo &&
-      (contact?.maskedEmail || contact?.website || (contact?.socialLinks || []).length),
+      (frontendMaskedEmail || contact?.website || (contact?.socialLinks || []).length),
   );
 
   return (
@@ -1409,8 +1564,8 @@ function MediaKitDrawer({
             {hasContact ? (
               <KitSection title="Contact & Actions" icon={<Lock className="h-5 w-5" />} className="mt-5">
                 <div className="rounded-[18px] border border-[#f1e2c2] bg-[#fffaf0] p-4">
-                  {contact?.maskedEmail ? (
-                    <div className="flex items-center gap-3 text-sm font-semibold text-black"><Mail className="h-4 w-4 text-[#9a6500]" /> {contact.maskedEmail}</div>
+                  {frontendMaskedEmail ? (
+                    <div className="flex items-center gap-3 text-sm font-semibold text-black"><Mail className="h-4 w-4 text-[#9a6500]" /> {frontendMaskedEmail}</div>
                   ) : null}
                   {contact?.website ? (
                     <div className="mt-3 flex items-center gap-3 break-all text-sm font-semibold text-black"><Globe className="h-4 w-4 text-[#9a6500]" /> {contact.website}</div>
@@ -1436,13 +1591,16 @@ function MediaKitDrawer({
 }
 
 export default function YouTubeBrowse() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const campaignId = searchParams.get("campaignId") || "";
+  const campaignName = String(searchParams.get("campaignName") || "").trim();
 
   const [filters, setFilters] = useState<Filters>(defaultFilters);
   const [allCreators, setAllCreators] = useState<YouTubeCreator[]>([]);
   const [frontendPage, setFrontendPage] = useState(1);
+  const [selectedCreator, setSelectedCreator] = useState<YouTubeCreator | null>(null);
+  const [detailPanelOpen, setDetailPanelOpen] = useState(false);
+  const [brandId, setBrandId] = useState("");
   const [showMoreFilters, setShowMoreFilters] = useState(false);
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const [showTierDropdown, setShowTierDropdown] = useState(false);
@@ -1491,6 +1649,10 @@ export default function YouTubeBrowse() {
   }, []);
 
   useEffect(() => {
+    setBrandId(getBrandIdFromStorage());
+  }, []);
+
+  useEffect(() => {
     if (!showMoreFilters || countries.length) return;
 
     let mounted = true;
@@ -1516,17 +1678,8 @@ export default function YouTubeBrowse() {
   }, [showMoreFilters, countries.length]);
 
   function openMediaKitPage(creator: YouTubeCreator) {
-    if (!creator.channelId) return;
-
-    const params = new URLSearchParams({
-      channelId: creator.channelId,
-      returnTo: "browse",
-    });
-
-    if (campaignId) params.set("campaignId", campaignId);
-    if (filters.keyword) params.set("keyword", filters.keyword);
-    if (filters.category) params.set("category", filters.category);
-    if (filters.country) params.set("country", filters.country);
+    const channelId = String(creator.channelId || "").trim();
+    if (!channelId) return;
 
     if (typeof window !== "undefined") {
       window.sessionStorage.setItem(
@@ -1535,12 +1688,19 @@ export default function YouTubeBrowse() {
           creators: allCreators,
           filters,
           frontendPage,
+          selectedChannelId: channelId,
           createdAt: Date.now(),
         }),
       );
     }
 
-    router.push(`/brand/media-kit?${params.toString()}`);
+    setSelectedCreator(creator);
+    setDetailPanelOpen(true);
+  }
+
+  function closeDetailPanel() {
+    setDetailPanelOpen(false);
+    setSelectedCreator(null);
   }
 
   const activeFiltersCount = useMemo(() => {
@@ -1583,6 +1743,7 @@ export default function YouTubeBrowse() {
     (currentPage - 1) * FRONTEND_PAGE_SIZE,
     currentPage * FRONTEND_PAGE_SIZE,
   );
+  const panelCreator = selectedCreator;
 
   async function loadCreators(nextFilters: Partial<Filters> = filters) {
     try {
@@ -2273,6 +2434,26 @@ export default function YouTubeBrowse() {
         </div>
       </div>
 
+      <DetailPanel
+        open={detailPanelOpen}
+        onClose={closeDetailPanel}
+        loading={false}
+        error={null}
+        data={null}
+        raw={buildDetailPanelRawFromYouTubeCreator(panelCreator)}
+        platform={"youtube" as any}
+        emailExists={Boolean(
+          panelCreator?.contact?.youtubeAboutEmail ||
+            (panelCreator?.contact?.totalEmails || []).length,
+        )}
+        onChangeCalc={() => undefined}
+        brandId={brandId}
+        campaignId={campaignId || null}
+        campaignName={campaignName || null}
+        handle={panelCreator ? getYouTubeInviteHandle(panelCreator) : null}
+        youtubeChannelId={panelCreator?.channelId || null}
+        lastFetchedAt={panelCreator?.recentUploadDate || null}
+      />
     </div>
   );
 }

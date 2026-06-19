@@ -320,7 +320,7 @@ export default function EmailEditor({
 
     // IMPORTANT:
     // Prefer real influencer email first. Proxy should only be fallback.
-    const initialTo = toEmail || toLabel || toProxyMailId || "";
+    const initialTo = toLabel || toEmail || toProxyMailId || "";
 
     setTo(initialTo);
     setMailSubject(subject || "");
@@ -439,13 +439,15 @@ export default function EmailEditor({
   };
 
   const buildPayload = (): EmailEditorPayload => {
-    const recipientEmail = getFirstValidEmail(toReal, to, toProxy);
+    // IMPORTANT:
+    // Do not read recipient email from the visible To field.
+    // In invitation flow, visible To is the creator handle.
+    // Backend resolves real email privately from channelId.
+    const recipientEmail = getFirstValidEmail(toReal, toProxy);
 
     return {
       to: (to || toReal || toProxy).trim(),
 
-      // IMPORTANT:
-      // Send these to backend root body.
       recipientEmail,
       influencerEmail: recipientEmail,
       creatorEmail: recipientEmail,
@@ -599,7 +601,7 @@ export default function EmailEditor({
                     <input
                       value={to}
                       onChange={(e) => setTo(e.target.value)}
-                      placeholder="Recipient email"
+                      placeholder="Recipient handle"
                       className={cn(
                         "w-full min-w-0 border-0 bg-transparent p-0 outline-none",
                         toDisplayName

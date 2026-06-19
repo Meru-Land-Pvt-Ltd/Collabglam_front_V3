@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import {
   Award,
   BadgeCheck,
@@ -25,6 +25,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
+import { DetailPanel } from "./DetailPanel";
 
 type CreatorScores = {
   sponsorshipScore?: number;
@@ -1036,6 +1037,104 @@ function getTopScoreLabel(score?: number) {
   return "Needs Review";
 }
 
+
+function getBrandIdFromStorage() {
+  if (typeof window === "undefined") return "";
+
+  return String(
+    window.localStorage.getItem("brandId") ||
+      window.localStorage.getItem("brand_id") ||
+      window.localStorage.getItem("brandMongoId") ||
+      "",
+  ).trim();
+}
+
+function getYouTubeInviteHandle(creator?: YouTubeCreator | null) {
+  const value = String(
+    creator?.channelId ||
+      (creator as any)?.youtubeChannelId ||
+      creator?.channelName ||
+      "",
+  )
+    .replace(/^@/, "")
+    .replace(/\s+/g, "")
+    .trim();
+
+  return value || null;
+}
+
+function buildDetailPanelRawFromYouTubeCreator(creator?: YouTubeCreator | null) {
+  if (!creator) return null;
+
+  const channelId = String(creator.channelId || "").trim();
+  const safeHandle = getYouTubeInviteHandle(creator) || channelId;
+  const channelName = String(creator.channelName || safeHandle || "Creator").trim();
+  const subscribers = getSubs(creator);
+
+  return {
+    channelId,
+    userId: channelId,
+    platform: "youtube",
+    profile: {
+      channelId,
+      userId: channelId,
+      modashId: channelId,
+      username: safeHandle,
+      handle: safeHandle,
+      fullname: channelName,
+      name: channelName,
+      picture: creator.thumbnail,
+      url: creator.channelUrl,
+      provider: "youtube",
+      followers: subscribers,
+      subscribers,
+      avgViews: creator.avgViews,
+      averageViews: creator.avgViews,
+      avgLikes: creator.avgLikes,
+      avgComments: creator.avgComments,
+      engagementRate: creator.engagementRate,
+      country: creator.country || creator.estimatedAudienceCountry,
+      language: creator.primaryLanguage ? { name: creator.primaryLanguage } : undefined,
+      bio: creator.description || creator.channelDescription,
+      postsCount: creator.totalVideos || creator.totalLifetimeVideos,
+      stats: {
+        followers: { value: subscribers },
+        avgViews: { value: creator.avgViews },
+        avgLikes: { value: creator.avgLikes },
+        avgComments: { value: creator.avgComments },
+      },
+      audience: {
+        geoCountries: creator.estimatedAudienceCountry
+          ? [{ name: creator.estimatedAudienceCountry, weight: 1 }]
+          : [],
+        languages: creator.primaryLanguage
+          ? [{ code: creator.primaryLanguage, weight: 1 }]
+          : [],
+        interests: Array.isArray(creator.channelTags)
+          ? creator.channelTags.map((name) => ({ name, weight: 1 }))
+          : [],
+        credibility: Number(creator.scores?.authenticityScore || 0) / 100,
+      },
+      recentPosts: Array.isArray(creator.recentVideoTitles)
+        ? creator.recentVideoTitles.map((video) => ({
+            title: video.title,
+            text: video.description || video.title,
+            thumbnail: video.thumbnail,
+            image: video.thumbnail,
+            url: video.url,
+            views: video.views,
+            likes: video.likes,
+            comments: video.comments,
+            publishedAt: video.publishedAt,
+            createdAt: video.publishedAt,
+          }))
+        : [],
+      popularPosts: [],
+      sponsoredPosts: [],
+    },
+  };
+}
+
 function MiniStatCard({
   icon,
   label,
@@ -1490,13 +1589,16 @@ function MediaKitDrawer({
 }
 
 export default function YouTubeBrowse() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const campaignId = searchParams.get("campaignId") || "";
+  const campaignName = String(searchParams.get("campaignName") || "").trim();
 
   const [filters, setFilters] = useState<Filters>(defaultFilters);
   const [allCreators, setAllCreators] = useState<YouTubeCreator[]>([]);
   const [frontendPage, setFrontendPage] = useState(1);
+  const [selectedCreator, setSelectedCreator] = useState<YouTubeCreator | null>(null);
+  const [detailPanelOpen, setDetailPanelOpen] = useState(false);
+  const [brandId, setBrandId] = useState("");
   const [showMoreFilters, setShowMoreFilters] = useState(false);
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const [showTierDropdown, setShowTierDropdown] = useState(false);
@@ -1545,6 +1647,10 @@ export default function YouTubeBrowse() {
   }, []);
 
   useEffect(() => {
+    setBrandId(getBrandIdFromStorage());
+  }, []);
+
+  useEffect(() => {
     if (!showMoreFilters || countries.length) return;
 
     let mounted = true;
@@ -1572,17 +1678,6 @@ export default function YouTubeBrowse() {
   function openMediaKitPage(creator: YouTubeCreator) {
     if (!creator.channelId) return;
 
-    const params = new URLSearchParams({
-      channelId: creator.channelId,
-      returnTo: "browse",
-      platform: "youtube",
-    });
-
-    if (campaignId) params.set("campaignId", campaignId);
-    if (filters.keyword) params.set("keyword", filters.keyword);
-    if (filters.category) params.set("category", filters.category);
-    if (filters.country) params.set("country", filters.country);
-
     if (typeof window !== "undefined") {
       window.sessionStorage.setItem(
         BROWSE_STATE_CACHE_KEY,
@@ -1595,7 +1690,13 @@ export default function YouTubeBrowse() {
       );
     }
 
-    router.push(`/brand/browse-influencer/DetailPanel?${params.toString()}`);
+    setSelectedCreator(creator);
+    setDetailPanelOpen(true);
+  }
+
+  function closeDetailPanel() {
+    setDetailPanelOpen(false);
+    setSelectedCreator(null);
   }
 
   const activeFiltersCount = useMemo(() => {
@@ -1638,6 +1739,8 @@ export default function YouTubeBrowse() {
     (currentPage - 1) * FRONTEND_PAGE_SIZE,
     currentPage * FRONTEND_PAGE_SIZE,
   );
+
+  const panelCreator = selectedCreator;
 
   async function loadCreators(nextFilters: Partial<Filters> = filters) {
     try {
@@ -2328,6 +2431,26 @@ export default function YouTubeBrowse() {
         </div>
       </div>
 
+      <DetailPanel
+        open={detailPanelOpen}
+        onClose={closeDetailPanel}
+        loading={false}
+        error={null}
+        data={null}
+        raw={buildDetailPanelRawFromYouTubeCreator(panelCreator)}
+        platform={"youtube" as any}
+        emailExists={Boolean(
+          panelCreator?.contact?.youtubeAboutEmail ||
+            (panelCreator?.contact?.totalEmails || []).length,
+        )}
+        onChangeCalc={() => undefined}
+        brandId={brandId}
+        campaignId={campaignId || null}
+        campaignName={campaignName || null}
+        handle={panelCreator ? getYouTubeInviteHandle(panelCreator) : null}
+        youtubeChannelId={panelCreator?.channelId || null}
+        lastFetchedAt={panelCreator?.recentUploadDate || null}
+      />
     </div>
   );
 }

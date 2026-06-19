@@ -292,6 +292,7 @@ type ViewDeliverableState = {
   milestone: NormalizedMilestone;
   deliverable: CampaignDeliverable;
   initialTab?: "about" | "submission";
+  milestoneSubmitted?: boolean;
 } | null;
 
 function asArray<T = any>(value: any): T[] {
@@ -1059,6 +1060,102 @@ function getPaymentHistory(campaign: CampaignData): PaymentHistoryRow[] {
   }
 
   return [];
+}
+
+
+type RevisionHistoryRow = {
+  id: string;
+  name: string;
+  underDelivery: string;
+  submittedOn: any;
+  link: string;
+  status: string;
+  notes: string;
+  milestone: NormalizedMilestone;
+  deliverable: CampaignDeliverable;
+};
+
+function isMilestoneSubmittedForBrandReview(milestone: any) {
+  const raw = milestone?.raw || milestone || {};
+  const status = String(
+    raw.status ||
+      raw.submissionStatus ||
+      raw.milestoneSubmissionStatus ||
+      milestone?.status ||
+      "",
+  )
+    .trim()
+    .toLowerCase();
+
+  const payoutStatus = String(raw.payoutStatus || "")
+    .trim()
+    .toLowerCase();
+
+  const submissionStatus = String(
+    raw.submissionStatus || raw.milestoneSubmissionStatus || "",
+  )
+    .trim()
+    .toLowerCase();
+
+  return Boolean(
+    raw.isMilestoneSubmitted === true ||
+      raw.isMilestoneSubmitted === 1 ||
+      submissionStatus === "submitted" ||
+      submissionStatus === "milestone_submitted" ||
+      raw.milestoneSubmittedAt ||
+      raw.submittedByInfluencerId ||
+      raw.released === true ||
+      payoutStatus === "initiated" ||
+      payoutStatus === "paid",
+  );
+}
+
+function getRevisionHistoryRows(
+  milestones: NormalizedMilestone[],
+): RevisionHistoryRow[] {
+  return milestones.flatMap((milestone) =>
+    milestone.deliverables.flatMap((deliverable, deliverableIndex) => {
+      const rawDeliverable: any = deliverable || {};
+      const revisions = asArray<any>(rawDeliverable.revisions);
+      const deliverableName = getDeliverableTitle(
+        rawDeliverable,
+        deliverableIndex,
+      );
+
+      return revisions.map((revision, revisionIndex) => ({
+        id:
+          normalizeMongoId(
+            revision.revisionId ||
+              revision._id ||
+              revision.id ||
+              `${getDeliverableId(rawDeliverable, deliverableIndex)}-${revisionIndex}`,
+          ) || `${milestone.id}-${deliverableIndex}-${revisionIndex}`,
+        name: pickString(
+          revision.issueName,
+          revision.name,
+          revision.title,
+          `Revision ${revisionIndex + 1}`,
+        ),
+        underDelivery: deliverableName,
+        submittedOn: pickString(
+          revision.submittedAt,
+          revision.submissionDate,
+          revision.raisedAt,
+          revision.createdAt,
+        ),
+        link: normalizeAssetUrl(
+          revision.issueDeliverableLink ||
+            revision.deliverableLink ||
+            revision.link ||
+            revision.url,
+        ),
+        status: pickString(revision.status, "pending"),
+        notes: pickString(revision.notes, revision.comments, "-"),
+        milestone,
+        deliverable: rawDeliverable,
+      }));
+    }),
+  );
 }
 function extractApiArray(payload: any, keys: string[]) {
   const candidates = [
@@ -2464,6 +2561,8 @@ function DeliverableViewModal({
   if (!state) return null;
 
   const { milestone, deliverable } = state;
+  const milestoneSubmitted =
+    Boolean(state.milestoneSubmitted) || isMilestoneSubmittedForBrandReview(milestone);
   const hasSubmission = hasSubmittedDeliverable(deliverable);
   const submittedLinks = getSubmittedLinks(deliverable);
   const draftLinks = getDraftLinks(deliverable);
@@ -2725,8 +2824,18 @@ function DeliverableViewModal({
           </button> */}
           <button
             type="button"
-            onClick={() => onSubmitDeliverable(milestone, deliverable, "final")}
-            className="h-10 rounded-[0.75rem] bg-[#1A1A1A] px-5 text-[0.9375rem] font-semibold text-white"
+            onClick={() => {
+              if (!milestoneSubmitted) {
+                onSubmitDeliverable(milestone, deliverable, "final");
+              }
+            }}
+            disabled={milestoneSubmitted}
+            title={
+              milestoneSubmitted
+                ? "This milestone has already been submitted for brand review."
+                : undefined
+            }
+            className="h-10 rounded-[0.75rem] bg-[#1A1A1A] px-5 text-[0.9375rem] font-semibold text-white disabled:cursor-not-allowed disabled:bg-[#F2F2F2] disabled:text-[#B8B8B8]"
           >
             {hasSubmission ? "Update Deliverable" : "Submit Deliverable"}
           </button>
@@ -2740,6 +2849,7 @@ function DeliverableNestedTable({
   campaign,
   milestone,
   deliverables,
+  milestoneSubmitted = false,
   onSubmitDeliverable,
   onViewDeliverable,
   anchorId,
@@ -2747,6 +2857,7 @@ function DeliverableNestedTable({
   campaign: CampaignData;
   milestone: NormalizedMilestone;
   deliverables: CampaignDeliverable[];
+  milestoneSubmitted?: boolean;
   onSubmitDeliverable: (
     milestone: NormalizedMilestone,
     deliverable: CampaignDeliverable,
@@ -2834,9 +2945,16 @@ function DeliverableNestedTable({
                           <button
                             type="button"
                             onClick={() =>
+                              !milestoneSubmitted &&
                               onSubmitDeliverable(milestone, item, "final")
                             }
-                            className="h-10 whitespace-nowrap rounded-[0.5rem] border border-[#E6E6E6] bg-white px-4 text-[0.75rem] font-semibold text-[#1A1A1A] transition hover:bg-[#F9F9F9]"
+                            disabled={milestoneSubmitted}
+                            title={
+                              milestoneSubmitted
+                                ? "This milestone has already been submitted for brand review."
+                                : undefined
+                            }
+                            className="h-10 whitespace-nowrap rounded-[0.5rem] border border-[#E6E6E6] bg-white px-4 text-[0.75rem] font-semibold text-[#1A1A1A] transition hover:bg-[#F9F9F9] disabled:cursor-not-allowed disabled:bg-[#F2F2F2] disabled:text-[#B8B8B8]"
                           >
                             {actionLabel}
                           </button>
@@ -2844,9 +2962,16 @@ function DeliverableNestedTable({
                             <button
                               type="button"
                               onClick={() =>
+                                !milestoneSubmitted &&
                                 onSubmitDeliverable(milestone, item, "draft")
                               }
-                              className="h-10 whitespace-nowrap rounded-[0.5rem] border border-[#E6E6E6] bg-white px-4 text-[0.75rem] font-semibold text-[#1A1A1A] transition hover:bg-[#F9F9F9]"
+                              disabled={milestoneSubmitted}
+                              title={
+                                milestoneSubmitted
+                                  ? "This milestone has already been submitted for brand review."
+                                  : undefined
+                              }
+                              className="h-10 whitespace-nowrap rounded-[0.5rem] border border-[#E6E6E6] bg-white px-4 text-[0.75rem] font-semibold text-[#1A1A1A] transition hover:bg-[#F9F9F9] disabled:cursor-not-allowed disabled:bg-[#F2F2F2] disabled:text-[#B8B8B8]"
                             >
                               {getDraftLinks(item).length
                                 ? "Update Draft"
@@ -2892,6 +3017,16 @@ function MilestonePageContent({
   const [submitState, setSubmitState] = useState<SubmitDeliverableState>(null);
   const [viewState, setViewState] = useState<ViewDeliverableState>(null);
   const [submittingMilestoneId, setSubmittingMilestoneId] = useState("");
+  const [locallySubmittedMilestoneIds, setLocallySubmittedMilestoneIds] =
+    useState<Set<string>>(() => new Set());
+  const revisionHistoryRows = useMemo(() => getRevisionHistoryRows(rows), [rows]);
+
+  const isMilestoneSubmitLocked = useCallback(
+    (milestone: NormalizedMilestone) =>
+      locallySubmittedMilestoneIds.has(milestone.id) ||
+      isMilestoneSubmittedForBrandReview(milestone),
+    [locallySubmittedMilestoneIds],
+  );
 
   useEffect(() => {
     if (!rows.length) return;
@@ -2924,6 +3059,11 @@ function MilestonePageContent({
     deliverable: CampaignDeliverable,
     mode: SubmissionMode,
   ) => {
+    if (isMilestoneSubmitLocked(milestone)) {
+      onAction("This milestone has already been submitted for brand review.");
+      return;
+    }
+
     setViewState(null);
     setSubmitState({ milestone, deliverable, mode });
   };
@@ -2934,11 +3074,21 @@ function MilestonePageContent({
     initialTab: "about" | "submission" = "about",
   ) => {
     setSubmitState(null);
-    setViewState({ milestone, deliverable, initialTab });
+    setViewState({
+      milestone,
+      deliverable,
+      initialTab,
+      milestoneSubmitted: isMilestoneSubmitLocked(milestone),
+    });
   };
 
   const handleSubmitMilestone = async (row: NormalizedMilestone) => {
-    if (!row.allDeliverablesSubmitted || submittingMilestoneId) return;
+    if (
+      !row.allDeliverablesSubmitted ||
+      submittingMilestoneId ||
+      isMilestoneSubmitLocked(row)
+    )
+      return;
 
     setSubmittingMilestoneId(row.id);
 
@@ -2953,6 +3103,11 @@ function MilestonePageContent({
         ),
       });
 
+      setLocallySubmittedMilestoneIds((current) => {
+        const next = new Set(current);
+        next.add(row.id);
+        return next;
+      });
       onAction("Milestone submitted successfully.");
       onReload();
     } catch (error: any) {
@@ -3004,7 +3159,9 @@ function MilestonePageContent({
 
             {rows.map((row) => {
               const isOpen = row.id === openMilestoneId;
-              const canSubmitMilestone = row.allDeliverablesSubmitted;
+              const milestoneSubmitted = isMilestoneSubmitLocked(row);
+              const canSubmitMilestone =
+                row.allDeliverablesSubmitted && !milestoneSubmitted;
               const isSubmittingThisMilestone =
                 submittingMilestoneId === row.id;
 
@@ -3039,15 +3196,19 @@ function MilestonePageContent({
                           !canSubmitMilestone || isSubmittingThisMilestone
                         }
                         title={
-                          !canSubmitMilestone
-                            ? "Submit all deliverables under this milestone first."
-                            : undefined
+                          milestoneSubmitted
+                            ? "This milestone has already been submitted for brand review."
+                            : !canSubmitMilestone
+                              ? "Submit all deliverables under this milestone first."
+                              : undefined
                         }
                         className="h-9 whitespace-nowrap rounded-[0.5rem] bg-[#1A1A1A] px-4 text-[0.75rem] font-semibold text-white transition hover:bg-black/90 disabled:cursor-not-allowed disabled:bg-[#F2F2F2] disabled:text-[#B8B8B8]"
                       >
                         {isSubmittingThisMilestone
                           ? "Submitting..."
-                          : "Submit Milestone"}
+                          : milestoneSubmitted
+                            ? "Submitted"
+                            : "Submit Milestone"}
                       </button>
                       <button
                         type="button"
@@ -3073,6 +3234,7 @@ function MilestonePageContent({
                       campaign={campaign}
                       milestone={row}
                       deliverables={row.deliverables}
+                      milestoneSubmitted={milestoneSubmitted}
                       onSubmitDeliverable={openSubmitDeliverable}
                       onViewDeliverable={openViewDeliverable}
                       anchorId="deliverables"
@@ -3107,23 +3269,89 @@ function MilestonePageContent({
                   <th className="px-3.5 py-3.5">Actions</th>
                 </tr>
               </thead>
-              <tbody>
-                <tr>
-                  <td colSpan={7} className="h-[25rem] px-4 py-10 text-center">
-                    <div className="mx-auto flex max-w-[24rem] flex-col items-center justify-center text-center">
-                      <div className="relative h-16 w-56 opacity-60">
-                        <div className="absolute left-8 top-2 h-6 w-44 rounded border border-[#E6E6E6] bg-white" />
-                        <div className="absolute left-0 top-8 h-6 w-44 rounded border border-[#E6E6E6] bg-white" />
+              <tbody className="divide-y divide-[#E6E6E6] text-[0.875rem] text-[#1A1A1A]">
+                {revisionHistoryRows.length ? (
+                  revisionHistoryRows.map((revision) => {
+                    const revisionMilestoneSubmitted = isMilestoneSubmitLocked(
+                      revision.milestone,
+                    );
+
+                    return (
+                      <tr key={revision.id}>
+                        <td className="px-3.5 py-3.5 font-semibold">
+                          {revision.name}
+                        </td>
+                        <td className="px-3.5 py-3.5 font-semibold">
+                          {revision.underDelivery}
+                        </td>
+                        <td className="px-3.5 py-3.5 font-semibold">
+                          {formatDate(revision.submittedOn)}
+                        </td>
+                        <td className="px-3.5 py-3.5 font-semibold">
+                          {revision.link ? (
+                            <a
+                              href={revision.link}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="underline underline-offset-2"
+                            >
+                              Open
+                            </a>
+                          ) : (
+                            <EmptyValue />
+                          )}
+                        </td>
+                        <td className="px-3.5 py-3.5">
+                          <StatusBadge status={revision.status} />
+                        </td>
+                        <td className="max-w-[18rem] px-3.5 py-3.5 font-medium text-[#6D6D6D]">
+                          <span className="line-clamp-2">
+                            {revision.notes || "-"}
+                          </span>
+                        </td>
+                        <td className="px-3.5 py-3.5">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              !revisionMilestoneSubmitted &&
+                              openSubmitDeliverable(
+                                revision.milestone,
+                                revision.deliverable,
+                                "final",
+                              )
+                            }
+                            disabled={revisionMilestoneSubmitted}
+                            title={
+                              revisionMilestoneSubmitted
+                                ? "This milestone has already been submitted for brand review."
+                                : undefined
+                            }
+                            className="h-9 whitespace-nowrap rounded-[0.5rem] border border-[#E6E6E6] bg-white px-3 text-[0.75rem] font-semibold text-[#1A1A1A] transition hover:bg-[#F9F9F9] disabled:cursor-not-allowed disabled:bg-[#F2F2F2] disabled:text-[#B8B8B8]"
+                          >
+                            Update Deliverable
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
+                ) : (
+                  <tr>
+                    <td colSpan={7} className="h-[25rem] px-4 py-10 text-center">
+                      <div className="mx-auto flex max-w-[24rem] flex-col items-center justify-center text-center">
+                        <div className="relative h-16 w-56 opacity-60">
+                          <div className="absolute left-8 top-2 h-6 w-44 rounded border border-[#E6E6E6] bg-white" />
+                          <div className="absolute left-0 top-8 h-6 w-44 rounded border border-[#E6E6E6] bg-white" />
+                        </div>
+                        <div className="mt-4 text-[1rem] font-semibold leading-6 text-[#1A1A1A]">
+                          No Revision History found
+                        </div>
+                        <div className="mt-2 text-[0.875rem] leading-5 text-[#B8B8B8]">
+                          Revisions History will be shown after raising a revision
+                        </div>
                       </div>
-                      <div className="mt-4 text-[1rem] font-semibold leading-6 text-[#1A1A1A]">
-                        No Revision History found
-                      </div>
-                      <div className="mt-2 text-[0.875rem] leading-5 text-[#B8B8B8]">
-                        Revisions History will be shown after raising a revision
-                      </div>
-                    </div>
-                  </td>
-                </tr>
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>

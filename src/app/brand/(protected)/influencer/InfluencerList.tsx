@@ -89,7 +89,28 @@ type ContractMeta = {
       sizeBytes?: number;
       uploadedAt?: string | null;
     } | null;
+    brandUploadedContract?: {
+      originalName?: string;
+      bucket?: string;
+      folder?: string;
+      key?: string;
+      mimeType?: string;
+      sizeBytes?: number;
+      uploadedAt?: string | null;
+    } | null;
+    signedUploadedContract?: {
+      originalName?: string;
+      bucket?: string;
+      folder?: string;
+      key?: string;
+      mimeType?: string;
+      sizeBytes?: number;
+      uploadedAt?: string | null;
+    } | null;
+    frozenAt?: string | null;
+    frozenByRole?: string;
   };
+  lockedAt?: string | null;
   status?: string;
   requestedEffectiveDate?: string | null;
   requestedEffectiveDateTimezone?: string | null;
@@ -505,8 +526,27 @@ function hasMilestonesCreated(meta?: ContractMeta | null) {
 function isUploadedOwnContract(meta?: ContractMeta | null) {
   return (
     meta?.contractSource === "uploaded" ||
-    meta?.document?.documentSource === "uploaded"
+    meta?.document?.documentSource === "uploaded" ||
+    Boolean(meta?.document?.uploadedContract?.key) ||
+    Boolean(meta?.document?.brandUploadedContract?.key) ||
+    Boolean(meta?.document?.signedUploadedContract?.key)
   );
+}
+
+function hasInfluencerUploadedSignedOwnContract(meta?: ContractMeta | null) {
+  return Boolean(
+    meta?.document?.signedUploadedContract?.key ||
+    (String(meta?.document?.frozenByRole || "").toLowerCase() === "influencer" &&
+      meta?.document?.uploadedContract?.key)
+  );
+}
+
+function canBrandReplaceUploadedOwnContract(meta?: ContractMeta | null) {
+  if (!meta) return false;
+  if (!isUploadedOwnContract(meta)) return false;
+  if (isLockedStatus(meta.status) || Boolean(meta.lockedAt)) return false;
+  if (hasInfluencerUploadedSignedOwnContract(meta)) return false;
+  return true;
 }
 
 function getProfessionalContractStatusMessage(
@@ -557,6 +597,9 @@ function getPrimaryAction(raw: any, meta?: ContractMeta | null): { label: string
 
   if (!hasExistingContract(raw, meta)) return { label: "Send Contract", viewOnly: false };
   if (isRejectedMeta(meta)) return { label: "Resend Contract", viewOnly: false };
+  if (isUploadedOwnContract(meta) && canBrandReplaceUploadedOwnContract(meta)) {
+    return { label: "Update Contract", viewOnly: false };
+  }
   if (isUploadedOwnContract(meta)) return { label: "View Contract", viewOnly: true };
   if (locked) return { label: "View Contract", viewOnly: true };
   if (isEditableStatus(statusStr)) return { label: "Update Contract", viewOnly: false };
@@ -2246,7 +2289,7 @@ export default function InfluencerList() {
       );
 
       const targetTab = actionToTab[action];
-      if (targetTab) router.push(`/brand/Influencer/${targetTab}?campaignId=${campaignId}`);
+      if (targetTab) router.push(`/brand/influencer/${targetTab}?campaignId=${campaignId}`);
     } catch (e) {
       alert(getApiErrorMessage(e, "Failed to update applicant status"));
     } finally {
@@ -2444,6 +2487,9 @@ export default function InfluencerList() {
 
     const meta = contractMetaMap[row.id] ?? null;
     const isResend = Boolean(meta?.contractId && isRejectedMeta(meta));
+    const isReplacingUploaded = Boolean(
+      meta?.contractId && canBrandReplaceUploadedOwnContract(meta)
+    );
 
     try {
       setOwnContractError("");
@@ -2456,6 +2502,8 @@ export default function InfluencerList() {
         fileName: file.name,
         contentType: "application/pdf",
         sizeBytes: file.size,
+        contractId: isReplacingUploaded ? meta?.contractId : undefined,
+        replaceContractId: isReplacingUploaded ? meta?.contractId : undefined,
       });
 
       const upload = uploadUrlRes?.data?.upload || uploadUrlRes?.upload;
@@ -2480,6 +2528,8 @@ export default function InfluencerList() {
         influencerId,
         isResend,
         resendOf: isResend ? meta?.contractId : "",
+        replaceContractId: isReplacingUploaded ? meta?.contractId : "",
+        existingContractId: isReplacingUploaded ? meta?.contractId : "",
         brandAcknowledgementAccepted: true,
         acknowledgementText: COLLABGLAM_CAMPAIGN_ACKNOWLEDGEMENT_TEXT,
         uploadedContract: {
@@ -2501,8 +2551,14 @@ export default function InfluencerList() {
 
       toast({
         icon: "success",
-        title: isResend ? "Contract resent" : "Contract uploaded",
-        text: "Own contract and CollabGlam acknowledgement have been sent to the influencer.",
+        title: isReplacingUploaded
+          ? "Contract replaced"
+          : isResend
+            ? "Contract resent"
+            : "Contract uploaded",
+        text: isReplacingUploaded
+          ? "The uploaded contract has been replaced and sent to the influencer again."
+          : "Own contract and CollabGlam acknowledgement have been sent to the influencer.",
       });
 
       resetOwnContractDialog();
@@ -2789,6 +2845,7 @@ export default function InfluencerList() {
       const showViewMilestone = milestoneCreatedMap[row.id] || hasMilestonesCreated(meta);
       const isLoading = viewingPdfForId === row.id || openingContractForId === row.id;
       const { label: primaryLabel, viewOnly } = getPrimaryAction(raw, meta);
+      const shouldReplaceUploadedContract = canBrandReplaceUploadedOwnContract(meta);
 
       if (isActive) {
         return (
@@ -2835,7 +2892,13 @@ export default function InfluencerList() {
           contractChoiceMode={!viewOnly && (primaryLabel === "Send Contract" || primaryLabel === "Resend Contract")}
           onUseTemplate={() => handleUseTemplateContract(row)}
           onUploadOwnContract={() => openOwnContractPicker(row)}
-          onPrimary={() => (viewOnly ? handleViewContractPdf(row) : openContractSidebar(row))}
+          onPrimary={() =>
+            shouldReplaceUploadedContract
+              ? openOwnContractPicker(row)
+              : viewOnly
+                ? handleViewContractPdf(row)
+                : openContractSidebar(row)
+          }
           onManage={() => handleManage(row)}
           onMail={() => handleMail(row)}
           moreMenu={
@@ -2955,6 +3018,7 @@ export default function InfluencerList() {
                   const showSign = canSignNow(meta);
                   const isLoading = viewingPdfForId === row.id || openingContractForId === row.id;
                   const { label: primaryLabel, viewOnly } = getPrimaryAction(raw, meta);
+                  const shouldReplaceUploadedContract = canBrandReplaceUploadedOwnContract(meta);
 
                   return (
                     <ActionButtons
@@ -2968,7 +3032,13 @@ export default function InfluencerList() {
                       contractChoiceMode={!viewOnly && (primaryLabel === "Send Contract" || primaryLabel === "Resend Contract")}
                       onUseTemplate={() => handleUseTemplateContract(row)}
                       onUploadOwnContract={() => openOwnContractPicker(row)}
-                      onPrimary={() => (viewOnly ? handleViewContractPdf(row) : openContractSidebar(row))}
+                      onPrimary={() =>
+            shouldReplaceUploadedContract
+              ? openOwnContractPicker(row)
+              : viewOnly
+                ? handleViewContractPdf(row)
+                : openContractSidebar(row)
+          }
                       onManage={() => handleManage(row)}
                       onMail={() => handleMail(row)}
                       moreMenu={

@@ -1379,7 +1379,9 @@ function buildCreatorMediaKitHref(c: Creator, campaignId?: string | null) {
   if (category) params.set("category", String(category));
   if (country) params.set("country", String(country));
 
-  return `/brand/media-kit?${params.toString()}`;
+  params.set("platform", "youtube");
+
+  return `/brand/browse-influencer/detail-panel?${params.toString()}`;
 }
 
 function AiScoreSparkleIcon() {
@@ -1593,8 +1595,8 @@ export default function InfluencerInvitationPage() {
           forceBackground: false,
         },
         {
-          // Wait up to 6 minutes while backend completes YouTube discovery.
-          timeout: 360000,
+          // Wait up to 15 minutes while backend completes YouTube discovery.
+          timeout: 900000,
         }
       );
 

@@ -2204,6 +2204,11 @@ type YouTubeMediaKitData = {
   contact?: {
     hasContactInfo?: boolean;
     maskedEmail?: string;
+    email?: string;
+    rawEmail?: string;
+    youtubeAboutEmail?: string;
+    emails?: string[];
+    totalEmails?: string[];
     website?: string;
     socialLinks?: { platform: string; url: string }[];
   };
@@ -2312,6 +2317,32 @@ function proxyYouTubeMediaKitImageUrl(url?: string | null) {
   if (!raw) return '';
   if (!/^https?:\/\//i.test(raw)) return raw;
   return getDetailPanelApiUrl(`/youtube-data/image-proxy?url=${encodeURIComponent(raw)}`);
+}
+
+function maskEmailFromFrontend(email?: string | null) {
+  const raw = String(email || '').trim();
+  if (!raw || !raw.includes('@')) return '';
+
+  const [, domain] = raw.split('@');
+  if (!domain) return '';
+
+  const cleanDomain = domain.trim();
+  if (!cleanDomain) return '';
+
+  return `xxxxxxxx@${cleanDomain}`;
+}
+
+function getFrontendMaskedMediaKitEmail(contact?: YouTubeMediaKitData['contact'] | null) {
+  const candidate =
+    contact?.rawEmail ||
+    contact?.email ||
+    contact?.youtubeAboutEmail ||
+    contact?.maskedEmail ||
+    contact?.totalEmails?.[0] ||
+    contact?.emails?.[0] ||
+    '';
+
+  return maskEmailFromFrontend(candidate);
 }
 
 function getYouTubeMediaKitHeroBackgroundImage(data?: YouTubeMediaKitData | null) {
@@ -2483,6 +2514,7 @@ function YouTubeMediaKitPanelContent({
   const safety = data.brandSafety;
   const prediction = data.campaignPrediction;
   const contact = data.contact;
+  const frontendMaskedEmail = getFrontendMaskedMediaKitEmail(contact);
   const recommendation = data.collabGlamRecommendation;
   const topVideos = data.topPerformingVideos || [];
   const recentVideos = data.recentVideos || [];
@@ -2541,10 +2573,10 @@ function YouTubeMediaKitPanelContent({
                     {getCleanYouTubeMediaKitSummary(recommendation?.summary) ||
                       'Brand-ready creator profile with performance, audience, safety, and match-score signals.'}
                   </p>
-                  {contact?.maskedEmail ? (
+                  {frontendMaskedEmail ? (
                     <div className="mt-4 inline-flex max-w-full items-center gap-2 rounded-full border border-[#eadfcb] bg-white/85 px-3.5 py-2 text-xs font-bold text-[#5f4b24] shadow-sm backdrop-blur">
                       <Mail className="h-3.5 w-3.5 shrink-0 text-[#9a6500]" />
-                      <span className="truncate">{contact.maskedEmail}</span>
+                      <span className="truncate">{frontendMaskedEmail}</span>
                     </div>
                   ) : null}
                 </div>
@@ -2772,11 +2804,11 @@ function YouTubeMediaKitPanelContent({
           </div>
         </section>
 
-        {contact?.hasContactInfo || contact?.maskedEmail || contact?.website || (contact?.socialLinks || []).length ? (
+        {contact?.hasContactInfo || frontendMaskedEmail || contact?.website || (contact?.socialLinks || []).length ? (
           <YouTubeMediaKitSection title="Contact Signals" icon={<Mail className="h-5 w-5" />} className="mt-6">
             <div className="rounded-[18px] border border-[#f1e2c2] bg-[#fffaf0] p-4">
-              {contact?.maskedEmail ? (
-                <div className="flex items-center gap-3 text-sm font-semibold text-black"><Mail className="h-4 w-4 text-[#9a6500]" /> {contact.maskedEmail}</div>
+              {frontendMaskedEmail ? (
+                <div className="flex items-center gap-3 text-sm font-semibold text-black"><Mail className="h-4 w-4 text-[#9a6500]" /> {frontendMaskedEmail}</div>
               ) : null}
               {contact?.website ? (
                 <div className="mt-3 flex items-center gap-3 break-all text-sm font-semibold text-black"><Globe className="h-4 w-4 text-[#9a6500]" /> {contact.website}</div>

@@ -248,7 +248,7 @@ type CountryOption = {
 };
 
 function getRuntimeApiBaseUrl() {
-  const explicit = String(process.env.NEXT_PUBLIC_API_BASE_URL || "").trim();
+  const explicit = String(process.env.NEXT_PUBLIC_API_URL || "").trim();
   if (explicit) return explicit;
 
   if (typeof window !== "undefined") {

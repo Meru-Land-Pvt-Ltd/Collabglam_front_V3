@@ -2720,7 +2720,7 @@ function YouTubeMediaKitPanelContent({
           <div className="mx-auto flex h-16 w-16 animate-pulse items-center justify-center rounded-full bg-[#fff3c4] text-[#9a6500]">
             <Sparkles className="h-8 w-8" />
           </div>
-          <h1 className="mt-5 text-2xl font-black text-black">Building brand media kit</h1>
+          <h1 className="mt-5 text-2xl font-black text-black">Media kit Loading</h1>
           <p className="mt-2 text-sm leading-6 text-[#7d725f]">
             Preparing audience, authenticity, performance, safety, sponsorship, and campaign prediction insights.
           </p>
@@ -2927,7 +2927,7 @@ function YouTubeMediaKitPanelContent({
           ) : null}
         </YouTubeMediaKitSection>
 
-        <YouTubeMediaKitSection title="Proof of Performance" icon={<BarChart3 className="h-5 w-5" />} className="mt-6">
+        {/* <YouTubeMediaKitSection title="Proof of Performance" icon={<BarChart3 className="h-5 w-5" />} className="mt-6">
           <div className="grid gap-4 lg:grid-cols-2">
             {(topVideos.length ? topVideos : recentVideos).slice(0, 6).map((video) => (
               <div
@@ -2957,7 +2957,7 @@ function YouTubeMediaKitPanelContent({
               </div>
             ))}
           </div>
-        </YouTubeMediaKitSection>
+        </YouTubeMediaKitSection> */}
 
         <section className="mt-6 rounded-[26px] bg-gradient-to-br from-[#7c4a03] via-[#d97706] to-[#facc15] p-6 text-white shadow-sm">
           <div className="grid gap-6 md:grid-cols-[1fr_1fr]">

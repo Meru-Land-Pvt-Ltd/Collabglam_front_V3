@@ -248,7 +248,7 @@ type CountryOption = {
 };
 
 function getRuntimeApiBaseUrl() {
-  const explicit = String(process.env.NEXT_PUBLIC_API_URL || "").trim();
+  const explicit = String(process.env.NEXT_PUBLIC_API_BASE_URL || "").trim();
   if (explicit) return explicit;
 
   if (typeof window !== "undefined") {
@@ -538,7 +538,7 @@ function VideoThumbnail({ src, title }: { src?: string; title?: string }) {
 
 
 const AI_TECH_LOADING_ICONS = ["🤖", "🧠", "⚙️", "💻", "📡", "🛰️", "⚡", "🔍"];
-const AI_TECH_LOADING_BACKGROUNDS = ["🤖", "🧠", "💻", "📱", "⚙️", "⚡"];
+const AI_TECH_LOADING_BACKGROUNDS = ["AI", "ML", "API", "DATA", "GPT", "BOT", "YT", "SEO"];
 
 function getCampaignLoadingBackgrounds(topic?: string) {
   const value = String(topic || "").toLowerCase();
@@ -678,7 +678,9 @@ function CreatorSearchLoader({ topic }: { topic?: string }) {
           </div>
         </div>
 
-       
+        <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-[#a98634]">
+          CollabGlam AI discovery
+        </p>
         <h3 className="mt-3 text-[24px] font-semibold text-gray-950">
           Finding creators for {topicLabel}
         </h3>
@@ -813,7 +815,7 @@ function CreatorEmptyState({ searched }: { searched: boolean }) {
   const copy = getCreatorEmptyStateCopy(searched);
 
   return (
-    <div className="grid min-h-[420px] place-items-center px-6 py-20 text-center">
+    <div className="grid min-h-[calc(100vh-260px)] place-items-center px-6 py-20 text-center">
       <div className="mx-auto max-w-[440px]">
         <img
           src={EMPTY_CREATORS_IMAGE_SRC}
@@ -1504,13 +1506,9 @@ function MediaKitDrawer({
 
         {loading ? (
           <div className="px-7 py-20">
-            <div className="mx-auto max-w-[520px] rounded-[28px] border border-[#f1e2c2] bg-white p-8 text-center shadow-sm">
-              <div className="mx-auto flex h-16 w-16 animate-pulse items-center justify-center rounded-full bg-[#fff3c4] text-[#9a6500]">
-                <Sparkles className="h-8 w-8" />
-              </div>
-              <h3 className="mt-5 text-xl font-bold text-black">Building brand-ready media kit</h3>
-              <p className="mt-2 text-sm leading-6 text-[#7d725f]">
-                We’re preparing performance, audience, brand-fit, safety, and prediction insights for this creator.
+            <div className="flex min-h-[220px] items-center justify-center">
+              <p className="text-sm font-medium text-[#7d725f]">
+                Loading creator details...
               </p>
             </div>
           </div>
@@ -1931,10 +1929,9 @@ export default function YouTubeBrowse() {
     Math.ceil(sortedCreators.length / FRONTEND_PAGE_SIZE),
   );
   const currentPage = Math.min(frontendPage, frontendTotalPages);
-  const creators = sortedCreators.slice(
-    (currentPage - 1) * FRONTEND_PAGE_SIZE,
-    currentPage * FRONTEND_PAGE_SIZE,
-  );
+  const visibleCreatorsCount = currentPage * FRONTEND_PAGE_SIZE;
+  const creators = sortedCreators.slice(0, visibleCreatorsCount);
+  const hasMoreCreators = creators.length < sortedCreators.length;
   const panelCreator = selectedCreator;
 
   async function loadCreators(nextFilters: Partial<Filters> = filters) {
@@ -2506,20 +2503,22 @@ export default function YouTubeBrowse() {
         </div>
       )}
 
-      <div className="mt-5 overflow-hidden rounded-[24px] border border-[#e6d9cc] bg-white">
-        <div className="flex items-center justify-between border-b border-[#eee5da] px-6 py-4">
-          <div>
-            <h2 className="text-[20px] font-semibold text-black">
-              YouTube creators
-            </h2>
-          </div>
-        </div>
-
-        {loading ? (
+      {loading ? (
+        <div className="mt-5 rounded-[24px] bg-white">
           <CreatorSearchLoader topic={filters.keyword || filters.category || "your campaign"} />
-        ) : creators.length === 0 ? (
-          <CreatorEmptyState searched={hasSearchCriteria(filters, campaignId)} />
-        ) : (
+        </div>
+      ) : creators.length === 0 ? (
+        <CreatorEmptyState searched={hasSearchCriteria(filters, campaignId)} />
+      ) : (
+        <div className="mt-5 overflow-hidden rounded-[24px] border border-[#e6d9cc] bg-white">
+          <div className="flex items-center justify-between border-b border-[#eee5da] px-6 py-4">
+            <div>
+              <h2 className="text-[20px] font-semibold text-black">
+                YouTube creators
+              </h2>
+            </div>
+          </div>
+
           <div className="divide-y divide-[#f0e8df]">
             {creators.map((creator) => {
               const authenticityScore = getCreatorAuthenticityScore(creator);
@@ -2602,30 +2601,21 @@ export default function YouTubeBrowse() {
               );
             })}
           </div>
-        )}
 
-        <div className="flex items-center justify-between border-t border-[#eee5da] px-6 py-5">
-          <button
-            type="button"
-            disabled={currentPage <= 1 || loading}
-            onClick={() => goToPage(currentPage - 1)}
-            className="rounded-xl border border-[#ddd] bg-white px-5 py-3 text-sm font-semibold text-black disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            Previous
-          </button>
-          <span className="text-sm text-[#777]">
-            Page {currentPage} of {frontendTotalPages}
-          </span>
-          <button
-            type="button"
-            disabled={currentPage >= frontendTotalPages || loading}
-            onClick={() => goToPage(currentPage + 1)}
-            className="rounded-xl border border-[#ddd] bg-white px-5 py-3 text-sm font-semibold text-black disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            Next
-          </button>
+          {hasMoreCreators ? (
+            <div className="flex justify-center border-t border-[#eee5da] px-6 py-5">
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => goToPage(currentPage + 1)}
+                className="rounded-full border border-[#ddd] bg-white px-7 py-3 text-sm font-semibold text-black shadow-sm transition hover:bg-[#fafafa] disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Load more
+              </button>
+            </div>
+          ) : null}
         </div>
-      </div>
+      )}
 
       <DetailPanel
         open={detailPanelOpen}

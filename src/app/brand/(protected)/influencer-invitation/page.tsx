@@ -2490,7 +2490,7 @@ export default function InfluencerInvitationPage() {
                         <div className="flex shrink-0 items-center gap-3 self-end sm:self-center">
                           <div className="hidden min-w-[92px] text-right sm:block">
                             <p className="text-[10px] font-bold uppercase tracking-wide text-[#9a7a38]">
-                              Authenticity
+                              Audience Authenticity
                             </p>
                             <p className={`mt-0.5 text-[20px] font-black leading-none ${getAudienceAuthenticityColorClass(audienceAuthenticity)}`}>
                               {audienceAuthenticity !== null ? `${audienceAuthenticity}%` : "—"}
@@ -2507,7 +2507,7 @@ export default function InfluencerInvitationPage() {
                             }}
                           >
                             <Eye className="h-4 w-4" />
-                            Media kit
+                            Insights
                           </Button>
                         </div>
                       </div>

@@ -237,11 +237,11 @@ function getStoredBrandId(): string {
 
     return String(
         brand?._id ||
-            brand?.brandId ||
-            brand?.id ||
-            localStorage.getItem("brandId") ||
-            sessionStorage.getItem("brandId") ||
-            ""
+        brand?.brandId ||
+        brand?.id ||
+        localStorage.getItem("brandId") ||
+        sessionStorage.getItem("brandId") ||
+        ""
     ).trim();
 }
 
@@ -251,10 +251,10 @@ function getStoredBrandName(): string {
 
     return String(
         brand?.brandName ||
-            brand?.name ||
-            localStorage.getItem("brandName") ||
-            sessionStorage.getItem("brandName") ||
-            ""
+        brand?.name ||
+        localStorage.getItem("brandName") ||
+        sessionStorage.getItem("brandName") ||
+        ""
     ).trim();
 }
 
@@ -450,8 +450,8 @@ function mapCampaignToCard(item: PlainObject): CampaignCard {
         footer: completed
             ? `Completed ${formatDate(item.completedAt || item.updatedAt || endValue)}`
             : endValue
-              ? `Ends ${formatDate(endValue)}`
-              : "Active campaign",
+                ? `Ends ${formatDate(endValue)}`
+                : "Active campaign",
         description: String(getNestedValue(item, ["description", "campaignDescription", "brief", "aboutCampaign"]) || ""),
         budget: String(getNestedValue(item, ["budget", "campaignBudget", "totalBudget", "price", "amount"]) || ""),
         startDate: formatDate(startValue),
@@ -1512,7 +1512,7 @@ export default function YoutubeInsightAnalyzePage({ mode = "auto" }: { mode?: In
                 >
                     <div className="insight-hero-copy relative z-20 max-w-[430px]">
                         <h1
-                            className="max-w-[360px]"
+                            className="max-w-[390px]"
                             style={{
                                 color: "var(--Light-Text-Primary, #1A1A1A)",
                                 fontFamily: "var(--Font-Family-Inter, Inter)",
@@ -1523,11 +1523,11 @@ export default function YoutubeInsightAnalyzePage({ mode = "auto" }: { mode?: In
                                 letterSpacing: "var(--Letter-Spacing--1, -0.0625rem)",
                             }}
                         >
-                            Analyse creator performance
+                            Analyse YouTube profiles & latest videos
                         </h1>
 
-                        <p
-                            className="mt-3 max-w-[360px]"
+                        {/* <p
+                            className="mt-3 max-w-[390px]"
                             style={{
                                 color: "var(--Light-Text-Secondary, #969696)",
                                 fontFamily: "var(--Font-Family-Inter, Inter)",
@@ -1538,8 +1538,8 @@ export default function YoutubeInsightAnalyzePage({ mode = "auto" }: { mode?: In
                                 letterSpacing: "var(--Letter-Spacing-0, 0)",
                             }}
                         >
-                            Paste a live media link or explore campaign deliverables to generate AI-powered insights.
-                        </p>
+                            Paste a YouTube video link, creator profile, channel URL, or @handle. If it’s a profile, Insight OS automatically analyses the creator’s latest public video.
+                        </p> */}
 
                         <GenerateReportBox
                             videoUrl={videoUrl}
@@ -1572,7 +1572,7 @@ export default function YoutubeInsightAnalyzePage({ mode = "auto" }: { mode?: In
                                     letterSpacing: "var(--Letter-Spacing-0, 0)",
                                 }}
                             >
-                                AI-powered creator report across 166M+ profiles
+                                AI-powered YouTube report for videos, channels, profiles, and latest uploads
                             </p>
                         </div>
                     </div>
@@ -1711,7 +1711,25 @@ export default function YoutubeInsightAnalyzePage({ mode = "auto" }: { mode?: In
                     `}</style>
                 </section>
 
-                {showBrandOnlySections ? (
+                <PreviousSearchesSection
+                    rows={previousSearchRows}
+                    loading={reportsLoading}
+                    error={reportsError}
+                    hasMore={reportsPage < reportsTotalPages}
+                    loadingMore={loadingMoreReports}
+                    dateFilter={dateFilter}
+                    sortBy={reportsSortBy}
+                    sortOrder={reportsSortOrder}
+                    searchTerm={reportsSearchTerm}
+                    onDateFilterChange={setDateFilter}
+                    onSortChange={handlePreviousSearchSort}
+                    onSearchChange={setReportsSearchTerm}
+                    onLoadMore={() => void handleLoadMorePreviousSearches()}
+                    onOpenReport={(row) => {
+                        if (row.reportId) router.push(`/brand/insight-os/report?reportId=${encodeURIComponent(row.reportId)}`);
+                    }}
+                />
+                {/* {showBrandOnlySections ? (
                     <>
                         <AllCampaignsSection
                             campaigns={campaigns}
@@ -1721,29 +1739,11 @@ export default function YoutubeInsightAnalyzePage({ mode = "auto" }: { mode?: In
                                 void handleOpenCampaignDrawer(campaign);
                             }}
                         />
-                        <PreviousSearchesSection
-                            rows={previousSearchRows}
-                            loading={reportsLoading}
-                            error={reportsError}
-                            hasMore={reportsPage < reportsTotalPages}
-                            loadingMore={loadingMoreReports}
-                            dateFilter={dateFilter}
-                            sortBy={reportsSortBy}
-                            sortOrder={reportsSortOrder}
-                            searchTerm={reportsSearchTerm}
-                            onDateFilterChange={setDateFilter}
-                            onSortChange={handlePreviousSearchSort}
-                            onSearchChange={setReportsSearchTerm}
-                            onLoadMore={() => void handleLoadMorePreviousSearches()}
-                            onOpenReport={(row) => {
-                                if (row.reportId) router.push(`/brand/insight-os/report?reportId=${encodeURIComponent(row.reportId)}`);
-                            }}
-                        />
                     </>
-                ) : null}
+                ) : null} */}
             </div>
 
-            <CampaignDeliverablesDrawer
+            {/* <CampaignDeliverablesDrawer
                 open={drawerOpen}
                 campaign={drawerCampaign}
                 loading={drawerLoading}
@@ -1752,7 +1752,7 @@ export default function YoutubeInsightAnalyzePage({ mode = "auto" }: { mode?: In
                     setDrawerOpen(false);
                     setDrawerError("");
                 }}
-            />
+            /> */}
         </main>
     );
 }

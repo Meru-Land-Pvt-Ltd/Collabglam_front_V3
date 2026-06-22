@@ -2422,6 +2422,75 @@ async function fetchDetailPanelYouTubeMediaKit(
   return (json?.data || null) as YouTubeMediaKitData | null;
 }
 
+async function fetchDetailPanelYouTubeAdvancedAnalytics({
+  channelId,
+  brandId,
+  calculationMethod = 'average',
+}: {
+  channelId: string;
+  brandId?: string;
+  calculationMethod?: 'median' | 'average';
+}) {
+  const safeChannelId = String(channelId || '').trim();
+
+  if (!safeChannelId) {
+    throw new Error('Missing YouTube channel ID');
+  }
+
+  const params = new URLSearchParams({
+    platform: 'youtube',
+    userId: safeChannelId,
+    calculationMethod,
+  });
+
+  const safeBrandId = String(brandId || '').trim();
+  const safeAdminId = getLocalStorageValue('adminId');
+
+  if (safeBrandId) {
+    params.set('brandId', safeBrandId);
+  } else if (safeAdminId) {
+    params.set('adminId', safeAdminId);
+  }
+
+  const response = await fetch(`${API_REPORT_ENDPOINT}?${params.toString()}`, {
+    method: 'GET',
+    credentials: 'include',
+  });
+
+  const apiRaw = await response.json().catch(() => ({}));
+
+  if (isReportLimitExceededPayload(apiRaw, response.status)) {
+    throw createReportApiError(apiRaw, response.status, 'Report limit exceeded');
+  }
+
+  if (!response.ok || apiRaw?.error) {
+    const message =
+      apiRaw?.message ||
+      apiRaw?.msg ||
+      (typeof apiRaw?.error === 'string'
+        ? apiRaw.error
+        : `Failed to load advanced analytics (${response.status})`);
+
+    throw createReportApiError(apiRaw, response.status, message);
+  }
+
+  const normalized = normalizeReport(apiRaw, 'youtube');
+  const report = buildPrimaryReport(normalized, apiRaw, 'youtube', safeChannelId);
+
+  if (!report) {
+    throw new Error('Advanced analytics loaded, but report data could not be read.');
+  }
+
+  return {
+    raw: apiRaw,
+    report,
+    fetchedAt:
+      typeof apiRaw?._lastFetchedAt === 'string'
+        ? apiRaw._lastFetchedAt
+        : new Date().toISOString(),
+  };
+}
+
 function formatYouTubeMediaKitNumber(value?: number | string | null) {
   const n = Number(value || 0);
   if (!Number.isFinite(n) || n <= 0) return '—';
@@ -2465,14 +2534,14 @@ function scoreYouTubeMediaKitValue(value?: number | string | null) {
 
 function getYouTubeMediaKitScoreTextClass(value?: number | string | null) {
   const score = scoreYouTubeMediaKitValue(value);
-  if (score >= 75) return 'text-[#16803a]';
+if (score >= 75) return 'text-[#16a34a]';
   if (score >= 35) return 'text-[#b7791f]';
   return 'text-[#dc2626]';
 }
 
 function getYouTubeMediaKitScoreBarClass(value?: number | string | null) {
   const score = scoreYouTubeMediaKitValue(value);
-  if (score >= 75) return 'bg-[#16a34a]';
+  if (score >= 75) return 'bg-[#c9ffde]';
   if (score >= 35) return 'bg-[#f59e0b]';
   return 'bg-[#dc2626]';
 }
@@ -2682,11 +2751,9 @@ function YouTubeMediaKitPanelContent({
   const overview = data.creatorOverview;
   const metrics = data.coreMetrics;
   const scores = data.performanceScores;
-  const audience = data.audienceInsights;
   const brandFit = data.brandFit;
   const content = data.contentAnalysis;
   const sponsorship = data.sponsorshipAnalysis;
-  const safety = data.brandSafety;
   const prediction = data.campaignPrediction;
   const contact = data.contact;
   const frontendMaskedEmail = getFrontendMaskedMediaKitEmail(contact);
@@ -2764,19 +2831,11 @@ function YouTubeMediaKitPanelContent({
               <p className="mt-2 text-lg font-black text-black">
                 {brandFit?.campaignFit || recommendation?.recommendation || 'Brand Match'}
               </p>
-              <div className="mt-7 grid grid-cols-2 gap-6">
-                <div>
-                  <p className="text-xs font-bold uppercase text-[#7a6440]">Authenticity</p>
-                  <p className={`mt-1 text-3xl font-black ${getYouTubeMediaKitScoreTextClass(scores?.authenticityScore)}`}>
-                    {scoreYouTubeMediaKitValue(scores?.authenticityScore)}%
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs font-bold uppercase text-[#7a6440]">Safety</p>
-                  <p className={`mt-1 text-3xl font-black ${getYouTubeMediaKitScoreTextClass(scores?.brandSafetyScore)}`}>
-                    {scoreYouTubeMediaKitValue(scores?.brandSafetyScore)}%
-                  </p>
-                </div>
+              <div className="mt-7">
+                <p className="text-xs font-bold uppercase text-[#7a6440]">Authenticity</p>
+                <p className={`mt-1 text-3xl font-black ${getYouTubeMediaKitScoreTextClass(scores?.authenticityScore)}`}>
+                  {scoreYouTubeMediaKitValue(scores?.authenticityScore)}%
+                </p>
               </div>
             </div>
           </div>
@@ -2789,56 +2848,30 @@ function YouTubeMediaKitPanelContent({
           <YouTubeMediaKitMetricCard label="Recent upload" value={formatYouTubeMediaKitDate(metrics?.recentUploadDate)} sub={`${metrics?.uploadsLast2Years || 0} uploads in 2 years`} icon={<CalendarDays className="h-5 w-5" />} />
         </div>
 
-        <div className="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           <YouTubeMediaKitScoreCard icon={<Target className="h-5 w-5" />} label="Relevancy" value={scores?.relevancyScore} hint="Campaign topic and content match" />
-          <YouTubeMediaKitScoreCard icon={<ShieldCheck className="h-5 w-5" />} label="Brand safety" value={scores?.brandSafetyScore} hint={safety?.riskLevel ? `${safety.riskLevel} risk` : 'Risk screening'} />
           <YouTubeMediaKitScoreCard icon={<Users className="h-5 w-5" />} label="Authenticity" value={scores?.authenticityScore} hint="Audience quality" />
           <YouTubeMediaKitScoreCard icon={<TrendingUp className="h-5 w-5" />} label="Consistency" value={scores?.consistencyScore} hint="Upload activity and stability" />
         </div>
 
-        <div className="mt-6 grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">
-          <YouTubeMediaKitSection title="Audience Insights" icon={<Globe className="h-5 w-5" />}>
-            <div className="space-y-4">
-              {(audience?.estimatedAudienceCountries || []).length ? (
-                audience?.estimatedAudienceCountries?.slice(0, 5).map((item) => (
-                  <div key={item.country}>
-                    <div className="mb-2 flex items-center justify-between text-sm font-bold text-black">
-                      <span>{item.country}</span>
-                      <span>{item.percentage}%</span>
-                    </div>
-                    <YouTubeMediaKitProgress value={item.percentage} />
-                  </div>
-                ))
-              ) : (
-                <p className="text-sm leading-6 text-[#655b4d]">Audience country data is not available for this creator.</p>
-              )}
-              {(audience?.interestCategories || []).length ? (
-                <div className="flex flex-wrap gap-2 pt-2">
-                  {audience?.interestCategories?.slice(0, 12).map((item) => <YouTubeMediaKitPill key={item}>{item}</YouTubeMediaKitPill>)}
-                </div>
-              ) : null}
-            </div>
-          </YouTubeMediaKitSection>
-
-          <YouTubeMediaKitSection title="Brand Fit" icon={<CheckCircle2 className="h-5 w-5" />}>
-            {(brandFit?.whyThisCreatorFits || []).length ? (
-              <ul className="space-y-3">
-                {brandFit?.whyThisCreatorFits?.slice(0, 5).map((item) => (
-                  <li key={item} className="flex gap-3 text-sm leading-6 text-[#655b4d]">
-                    <span className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#fff3c4] text-[#9a6500]">
-                      <CheckCircle2 className="h-3.5 w-3.5" />
-                    </span>
-                    {item}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-sm leading-6 text-[#655b4d]">
-                This creator has been matched using campaign topic, performance, safety, and audience signals.
-              </p>
-            )}
-          </YouTubeMediaKitSection>
-        </div>
+        <YouTubeMediaKitSection title="Brand Fit" icon={<CheckCircle2 className="h-5 w-5" />} className="mt-6">
+          {(brandFit?.whyThisCreatorFits || []).length ? (
+            <ul className="space-y-3">
+              {brandFit?.whyThisCreatorFits?.slice(0, 5).map((item) => (
+                <li key={item} className="flex gap-3 text-sm leading-6 text-[#655b4d]">
+                  <span className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#fff3c4] text-[#9a6500]">
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                  </span>
+                  {item}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm leading-6 text-[#655b4d]">
+              This creator has been matched using campaign topic, performance, and creator profile signals.
+            </p>
+          )}
+        </YouTubeMediaKitSection>
 
         <div className="mt-6 grid gap-6 lg:grid-cols-3">
           <YouTubeMediaKitSection title="Reach & Performance" icon={<BarChart3 className="h-5 w-5" />} className="lg:col-span-2">
@@ -2880,47 +2913,26 @@ function YouTubeMediaKitPanelContent({
           </YouTubeMediaKitSection>
         </div>
 
-        <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_1fr]">
-          <YouTubeMediaKitSection title="Sponsorship Readiness" icon={<Sparkles className="h-5 w-5" />}>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <YouTubeMediaKitMetricCard label="Sponsored videos" value={sponsorship?.sponsoredVideosDetected || 0} />
-              <YouTubeMediaKitMetricCard label="Sponsorship frequency" value={formatYouTubeMediaKitPercent(sponsorship?.sponsorshipFrequency)} />
-              <YouTubeMediaKitMetricCard label="Promo mentions" value={sponsorship?.promoCodeMentions || 0} />
-              <YouTubeMediaKitMetricCard label="Collab readiness" value={sponsorship?.collaborationReadiness || 'Review'} />
+        <YouTubeMediaKitSection title="Sponsorship Readiness" icon={<Sparkles className="h-5 w-5" />} className="mt-6">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <YouTubeMediaKitMetricCard label="Sponsored videos" value={sponsorship?.sponsoredVideosDetected || 0} />
+            <YouTubeMediaKitMetricCard label="Sponsorship frequency" value={formatYouTubeMediaKitPercent(sponsorship?.sponsorshipFrequency)} />
+            <YouTubeMediaKitMetricCard label="Promo mentions" value={sponsorship?.promoCodeMentions || 0} />
+            <YouTubeMediaKitMetricCard label="Collab readiness" value={sponsorship?.collaborationReadiness || 'Review'} />
+          </div>
+          {(sponsorship?.recentSponsors || []).length ? (
+            <div className="mt-4 flex flex-wrap gap-2">
+              {sponsorship?.recentSponsors?.slice(0, 8).map((item) => <YouTubeMediaKitPill key={item}>{item}</YouTubeMediaKitPill>)}
             </div>
-            {(sponsorship?.recentSponsors || []).length ? (
-              <div className="mt-4 flex flex-wrap gap-2">
-                {sponsorship?.recentSponsors?.slice(0, 8).map((item) => <YouTubeMediaKitPill key={item}>{item}</YouTubeMediaKitPill>)}
-              </div>
-            ) : null}
-          </YouTubeMediaKitSection>
-
-          <YouTubeMediaKitSection title="Brand Safety" icon={<ShieldCheck className="h-5 w-5" />} className="bg-[#111111] text-white">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="rounded-[22px] bg-white/10 p-5">
-                <p className="text-xs font-bold uppercase tracking-[0.15em] text-white/60">Score</p>
-                <p className="mt-2 text-[40px] font-black">{scoreYouTubeMediaKitValue(safety?.score || scores?.brandSafetyScore)}</p>
-              </div>
-              <div className="rounded-[22px] bg-white/10 p-5">
-                <p className="text-xs font-bold uppercase tracking-[0.15em] text-white/60">Risk level</p>
-                <p className="mt-2 text-[28px] font-black capitalize">{safety?.riskLevel || 'Low'}</p>
-              </div>
-            </div>
-            <div className="mt-6 rounded-[16px] border border-white/10 bg-white/10 p-4 text-sm text-white/85">
-              {(safety?.flags || []).length ? safety?.flags?.join(' · ') : 'No major concern detected'}
-            </div>
-          </YouTubeMediaKitSection>
-        </div>
+          ) : null}
+        </YouTubeMediaKitSection>
 
         <YouTubeMediaKitSection title="Proof of Performance" icon={<BarChart3 className="h-5 w-5" />} className="mt-6">
           <div className="grid gap-4 lg:grid-cols-2">
             {(topVideos.length ? topVideos : recentVideos).slice(0, 6).map((video) => (
-              <a
+              <div
                 key={video.videoId || video.url || video.title}
-                href={video.url || '#'}
-                target="_blank"
-                rel="noreferrer"
-                className="grid gap-3 rounded-[20px] border border-[#f1e2c2] bg-[#fffdf9] p-3 transition hover:border-[#e0bd72] sm:grid-cols-[130px_1fr]"
+                className="grid gap-3 rounded-[20px] border border-[#f1e2c2] bg-[#fffdf9] p-3 sm:grid-cols-[130px_1fr]"
               >
                 <div className="aspect-video overflow-hidden rounded-[16px] bg-[#f7efe0]">
                   {video.thumbnail ? (
@@ -2942,7 +2954,7 @@ function YouTubeMediaKitPanelContent({
                     {formatYouTubeMediaKitNumber(video.views)} views · {formatYouTubeMediaKitNumber(video.likes)} likes · {formatYouTubeMediaKitDate(video.publishedAt)}
                   </p>
                 </div>
-              </a>
+              </div>
             ))}
           </div>
         </YouTubeMediaKitSection>
@@ -2979,28 +2991,185 @@ function YouTubeMediaKitPanelContent({
           </div>
         </section>
 
-        {contact?.hasContactInfo || frontendMaskedEmail || contact?.website || (contact?.socialLinks || []).length ? (
-          <YouTubeMediaKitSection title="Contact Signals" icon={<Mail className="h-5 w-5" />} className="mt-6">
-            <div className="rounded-[18px] border border-[#f1e2c2] bg-[#fffaf0] p-4">
-              {frontendMaskedEmail ? (
-                <div className="flex items-center gap-3 text-sm font-semibold text-black"><Mail className="h-4 w-4 text-[#9a6500]" /> {frontendMaskedEmail}</div>
-              ) : null}
-              {contact?.website ? (
-                <div className="mt-3 flex items-center gap-3 break-all text-sm font-semibold text-black"><Globe className="h-4 w-4 text-[#9a6500]" /> {contact.website}</div>
-              ) : null}
-              {(contact?.socialLinks || []).length ? (
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {(contact?.socialLinks || []).map((link) => <YouTubeMediaKitPill key={`${link.platform}-${link.url}`}>{link.platform}</YouTubeMediaKitPill>)}
-                </div>
-              ) : null}
-            </div>
-          </YouTubeMediaKitSection>
-        ) : null}
       </div>
     </div>
   );
 }
 
+
+
+function getAdvancedAudiencePercent(value: any) {
+  const n = toNumber(value);
+
+  if (!Number.isFinite(n) || n <= 0) return 0;
+
+  const percent = n <= 1 ? n * 100 : n;
+  return Math.max(0, Math.min(100, Math.round(percent * 10) / 10));
+}
+
+function YouTubeAdvancedAnalyticsPanel({
+  loading,
+  error,
+  report,
+  fetchedAt,
+}: {
+  loading: boolean;
+  error: string | null;
+  report: InfluencerReport | null;
+  fetchedAt?: string | null;
+}) {
+  if (loading) {
+    return (
+      <YouTubeMediaKitSection
+        title="Graphs & Insights"
+        icon={<BarChart3 className="h-5 w-5" />}
+        className="mt-6"
+      >
+        <div className="flex items-center gap-3 rounded-[18px] bg-[#fff8e6] p-4 text-sm font-semibold text-[#7a5a16]">
+          <RefreshCw className="h-4 w-4 animate-spin" />
+          Loading Modash graphs and insights...
+        </div>
+      </YouTubeMediaKitSection>
+    );
+  }
+
+  if (error) {
+    return (
+      <YouTubeMediaKitSection
+        title="Graphs & Insights"
+        icon={<BarChart3 className="h-5 w-5" />}
+        className="mt-6"
+      >
+        <div className="rounded-[18px] border border-red-100 bg-red-50 p-4 text-sm text-red-700">
+          {error}
+        </div>
+      </YouTubeMediaKitSection>
+    );
+  }
+
+  if (!report) return null;
+
+  const followers = toNumber(report.followers || report.stats?.followers?.value);
+  const avgViews = toNumber(
+    report.avgViews ||
+      report.avgReelsPlays ||
+      report.stats?.avgViews?.value
+  );
+  const avgLikes = toNumber(report.avgLikes || report.stats?.avgLikes?.value);
+  const credibilityScore = getAdvancedAudiencePercent(report.audience?.credibility);
+
+  const recentPosts = Array.isArray(report.recentPosts) ? report.recentPosts : [];
+  const popularPosts = Array.isArray(report.popularPosts) ? report.popularPosts : [];
+  const statHistorySource = pickBestTrendHistory(
+    report.statHistory,
+    (report as any)?.statsByContentType?.all?.statHistory,
+    (report as any)?.statsByContentType?.reels?.statHistory,
+    (report as any)?.profile?.statHistory
+  );
+
+  const trendData = (() => {
+    if (statHistorySource.length) {
+      const normalizedHistory = statHistorySource.map(normalizeTrendPoint);
+      const labels = normalizedHistory.map((item, index) =>
+        parseMonthLabel(String(item.month || ''), index)
+      );
+
+      const hasFollowersHistory = normalizedHistory.some((item) => item.followers > 0);
+      const hasViewsHistory = normalizedHistory.some((item) => item.avgViews > 0);
+
+      return {
+        organicTrend: normalizedHistory.map((item) => item.avgLikes),
+        sponsoredTrend: hasFollowersHistory
+          ? normalizedHistory.map((item) => item.followers)
+          : hasViewsHistory
+            ? normalizedHistory.map((item) => item.avgViews)
+            : [],
+        trendLabels: labels,
+        secondaryTrendLabel: hasFollowersHistory || followers > 0 ? 'Followers' : 'Avg Views',
+      };
+    }
+
+    const fallbackPosts = recentPosts.slice(0, 12);
+    const labels = fallbackPosts.map((post, index) =>
+      parseMonthLabel(
+        String(post?.createdAt ?? post?.publishedAt ?? post?.date ?? ''),
+        index
+      )
+    );
+
+    return {
+      organicTrend: fallbackPosts.map((post) => toNumber(post?.likes)),
+      sponsoredTrend: fallbackPosts.map((post) =>
+        toNumber(post?.views ?? post?.plays ?? post?.likes)
+      ),
+      trendLabels: labels.length ? labels : undefined,
+      secondaryTrendLabel: 'Views',
+    };
+  })();
+
+  const audienceAge = (report.audience?.ages ?? []).map((item: any) => ({
+    label: item.code,
+    value: getAdvancedAudiencePercent(item.weight ?? item.value),
+  }));
+
+  const audienceGender = (report.audience?.genders ?? []).map((item: any) => ({
+    label:
+      item.code === 'MALE'
+        ? 'Male'
+        : item.code === 'FEMALE'
+          ? 'Female'
+          : item.code,
+    value: getAdvancedAudiencePercent(item.weight ?? item.value),
+  }));
+
+  const topCountries = (report.audience?.geoCountries ?? [])
+    .slice(0, 4)
+    .map((item: any) => ({
+      name: item.name || item.code || 'Unknown',
+      value: getAdvancedAudiencePercent(item.weight ?? item.value),
+    }));
+
+  const topLanguages = (report.audience?.languages ?? [])
+    .slice(0, 4)
+    .map((item: any) => ({
+      label: item.name || item.code || 'Unknown',
+      value: getAdvancedAudiencePercent(item.weight ?? item.value),
+    }));
+
+  return (
+    <div className="mt-6 space-y-6">
+      <PerformanceTrendCard
+        key="youtube-media-kit-performance-trend"
+        organicTrend={trendData.organicTrend}
+        sponsoredTrend={trendData.sponsoredTrend}
+        trendLabels={trendData.trendLabels}
+        statHistory={statHistorySource.map(normalizeTrendPoint)}
+        secondaryLabel={trendData.secondaryTrendLabel}
+        primaryValue={avgLikes}
+        secondaryValue={trendData.secondaryTrendLabel === 'Followers' ? followers : avgViews}
+      />
+
+      <AudienceIntelligenceCard
+        ageData={audienceAge}
+        genderData={audienceGender}
+        topCountries={topCountries}
+        credibilityScore={credibilityScore}
+        topLanguages={topLanguages}
+      />
+
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.4fr)_420px]">
+        <RecentPostsTable
+          posts={recentPosts.slice(0, 5).map((post) => ({ ...post, url: undefined }))}
+        />
+        <PopularContentPanel
+          posts={(popularPosts.length ? popularPosts : recentPosts)
+            .slice(0, 2)
+            .map((post) => ({ ...post, url: undefined }))}
+        />
+      </div>
+    </div>
+  );
+}
 
 export const DetailPanel = React.memo<DetailPanelProps>(
   ({
@@ -3069,6 +3238,13 @@ export const DetailPanel = React.memo<DetailPanelProps>(
     const [youtubeMediaKit, setYoutubeMediaKit] = useState<YouTubeMediaKitData | null>(null);
     const [youtubeMediaKitLoading, setYoutubeMediaKitLoading] = useState(false);
     const [youtubeMediaKitError, setYoutubeMediaKitError] = useState<string | null>(null);
+    const [youtubeAdvancedReport, setYoutubeAdvancedReport] =
+      useState<InfluencerReport | null>(null);
+    const [youtubeAdvancedLoading, setYoutubeAdvancedLoading] = useState(false);
+    const [youtubeAdvancedError, setYoutubeAdvancedError] = useState<string | null>(null);
+    const [youtubeAdvancedFetchedAt, setYoutubeAdvancedFetchedAt] = useState<string | null>(null);
+    const [youtubeAdvancedRequested, setYoutubeAdvancedRequested] = useState(false);
+    const youtubeAdvancedRequestRef = useRef(0);
 
     const rateCardRequestKeyRef = useRef("");
 
@@ -3311,6 +3487,66 @@ export const DetailPanel = React.memo<DetailPanelProps>(
       youtubeMediaKitQueryValues.category,
       youtubeMediaKitQueryValues.country,
     ]);
+
+    useEffect(() => {
+      youtubeAdvancedRequestRef.current += 1;
+      setYoutubeAdvancedRequested(false);
+      setYoutubeAdvancedReport(null);
+      setYoutubeAdvancedError(null);
+      setYoutubeAdvancedFetchedAt(null);
+      setYoutubeAdvancedLoading(false);
+    }, [open, isYouTubeMediaKitMode, youtubeChannelIdForPanel, brandId]);
+
+    const handleShowYouTubeAdvancedAnalytics = async () => {
+      if (!youtubeChannelIdForPanel) {
+        await Swal.fire(
+          'Missing YouTube channel',
+          'Could not load advanced analytics because the YouTube channel ID was not found.',
+          'warning'
+        );
+        return;
+      }
+
+      const requestId = youtubeAdvancedRequestRef.current + 1;
+      youtubeAdvancedRequestRef.current = requestId;
+
+      try {
+        setYoutubeAdvancedRequested(true);
+        setYoutubeAdvancedLoading(true);
+        setYoutubeAdvancedError(null);
+        setYoutubeAdvancedReport(null);
+        setYoutubeAdvancedFetchedAt(null);
+
+        const result = await fetchDetailPanelYouTubeAdvancedAnalytics({
+          channelId: youtubeChannelIdForPanel,
+          brandId,
+          calculationMethod: 'average',
+        });
+
+        if (youtubeAdvancedRequestRef.current !== requestId) return;
+
+        setYoutubeAdvancedReport(result.report);
+        setYoutubeAdvancedFetchedAt(result.fetchedAt);
+        setLastUpdatedAt(result.fetchedAt);
+      } catch (err: any) {
+        if (youtubeAdvancedRequestRef.current !== requestId) return;
+
+        setYoutubeAdvancedReport(null);
+        setYoutubeAdvancedFetchedAt(null);
+
+        if (isReportLimitExceededError(err)) {
+          onReportLimitExceeded?.();
+        }
+
+        setYoutubeAdvancedError(
+          err?.message || 'Failed to load YouTube advanced analytics'
+        );
+      } finally {
+        if (youtubeAdvancedRequestRef.current === requestId) {
+          setYoutubeAdvancedLoading(false);
+        }
+      }
+    };
 
     const getActiveYoutubeChannelId = (preferDraft = false) => {
       return String(
@@ -5162,12 +5398,47 @@ Team CollabGlam`;
 
             <div className="p-5">
               {isYouTubeMediaKitMode ? (
-                <YouTubeMediaKitPanelContent
-                  loading={youtubeMediaKitLoading}
-                  error={youtubeMediaKitError}
-                  data={youtubeMediaKit}
-                  fallbackReport={selectedReport}
-                />
+                <>
+                  <YouTubeMediaKitPanelContent
+                    loading={youtubeMediaKitLoading}
+                    error={youtubeMediaKitError}
+                    data={youtubeMediaKit}
+                    fallbackReport={selectedReport}
+                  />
+
+                  {!youtubeAdvancedRequested ? (
+                    <section className="mt-6 rounded-[26px] border border-[#f1e2c2] bg-[#fffdf9] p-6 shadow-sm">
+                      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#9a8a73]">
+                            Modash analytics
+                          </p>
+                          <h2 className="mt-1 text-[22px] font-black text-black">Advanced Analytics</h2>
+                          <p className="mt-1 text-sm leading-6 text-[#655b4d]">
+                            Click below to call the YouTube Modash report API and show graphs and insights.
+                          </p>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={handleShowYouTubeAdvancedAnalytics}
+                          disabled={youtubeAdvancedLoading || !youtubeChannelIdForPanel}
+                          className="inline-flex h-12 items-center justify-center gap-2 rounded-full bg-black px-6 text-sm font-bold text-white shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          <BarChart3 className="h-4 w-4" />
+                          Show Advanced Analytics
+                        </button>
+                      </div>
+                    </section>
+                  ) : (
+                    <YouTubeAdvancedAnalyticsPanel
+                      loading={youtubeAdvancedLoading}
+                      error={youtubeAdvancedError}
+                      report={youtubeAdvancedReport}
+                      fetchedAt={youtubeAdvancedFetchedAt}
+                    />
+                  )}
+                </>
               ) : (
                 <>
                   {panelLoading ? <LoadingState /> : null}

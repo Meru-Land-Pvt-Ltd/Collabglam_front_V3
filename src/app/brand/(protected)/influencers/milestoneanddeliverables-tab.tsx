@@ -297,7 +297,7 @@ const isReleasedMilestone = (milestone: any) => {
         milestone?.raw?.released === true ||
         status.includes("released") ||
         status.includes("paid") ||
-        status.includes("approved")
+        status.includes("initiated")
     );
 };
 
@@ -327,8 +327,7 @@ const isMilestoneSubmittedByInfluencer = (milestone: any) => {
         raw?.submittedByInfluencerId ||
         milestone?.submittedByInfluencerId ||
         status === "submitted" ||
-        status === "milestone_submitted" ||
-        status === "ready_for_brand_review"
+        status === "milestone_submitted"
     );
 };
 
@@ -2224,6 +2223,12 @@ export default function MilestoneAndDeliverablesTab({
                 comments
             );
 
+            const responsePayload = (res as any)?.data ?? res;
+            const updatedMilestoneFromResponse =
+                responsePayload?.milestone ||
+                responsePayload?.data?.milestone ||
+                null;
+
             const finalUpdatedDeliverable = {
                 ...deliverable,
                 ...updatedDeliverable,
@@ -2276,13 +2281,22 @@ export default function MilestoneAndDeliverablesTab({
                         };
                     });
 
-                    return {
-                        ...milestoneItem,
-                        deliverables: updatedDeliverables,
-                        raw: {
+                    const mergedMilestone = updatedMilestoneFromResponse
+                        ? {
+                            ...raw,
+                            ...updatedMilestoneFromResponse,
+                            deliverables: updatedDeliverables,
+                        }
+                        : {
                             ...raw,
                             deliverables: updatedDeliverables,
-                        },
+                        };
+
+                    return {
+                        ...milestoneItem,
+                        ...mergedMilestone,
+                        deliverables: updatedDeliverables,
+                        raw: mergedMilestone,
                     };
                 })
             );

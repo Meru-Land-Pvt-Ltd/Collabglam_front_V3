@@ -762,12 +762,9 @@ function InfluencerLoginContent() {
                     <div
                       className="absolute inset-0"
                       style={{
-                        backdropFilter: "blur(12px)",
-                        WebkitBackdropFilter: "blur(12px)",
-                        maskImage:
-                          "linear-gradient(to top, black 0%, transparent 100%)",
-                        WebkitMaskImage:
-                          "linear-gradient(to top, black 0%, transparent 100%)",
+                        background: "linear-gradient(180deg, rgba(153, 153, 153, 0.00) 0%, rgba(255, 255, 255, 0.10) 100%)",
+                        backdropFilter: "blur(15px)",
+                        WebkitBackdropFilter: "blur(15px)",
                       }}
                     />
                     <p className="relative text-center text-white font-semibold text-[24px] leading-[32px] z-10">

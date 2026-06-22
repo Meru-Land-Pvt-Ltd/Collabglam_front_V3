@@ -1,2413 +1,2844 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { toast, ToastStyles } from "@/components/ui/toast";
+import React from "react";
 import { Button } from "@/components/ui/buttonComp";
-import { FloatingInput } from "@/components/ui/floatingInput";
-import {
-  FloatingMultiSelect,
-  FloatingSelect,
-  SelectItem,
-} from "@/components/ui/selectComp";
-import { LabeledTextarea } from "@/components/ui/textAreaComp";
-import { ProductCardUpload } from "@/components/ui/productCard-Image";
-import { FloatingDateInput } from "@/components/ui/date";
-import { FloatingTagInput } from "@/components/ui/tagInput";
-
-import {
-  apiCampaignCreate,
-  apiCampaignEditDraft,
-  getApiErrorMessage,
-  CampaignStatus,
-  CreateCampaignManualPayload,
-  EditDraftPayload,
-  EnrichedCampaignDoc,
-  apiUploadImages,
-  apiAdminEditCampaign,
-  apiCampaignGetById2,
-} from "../../../../brand/services/brandApi";
-
-import {
-  CAMPAIGN_TYPES,
-  cn,
-  compact,
-  countryKey,
-  filesToDataUrls,
-  getBrandId,
-  idsOf,
-  isValidDateRange,
-  LAYOUT,
-  MANUAL_PLATFORM_OPTIONS,
-  Option,
-  pickCampaignId,
-  platformToUi,
-  safeDateInput,
-  SEARCHABLE_UI,
-  useSearchProps,
-  validateFiles,
-  mergeOptions,
-  prettyTierValue,
-} from "./create-campaign.utils";
-
-import {
-  useCampaignLists,
-  useCategoryPicker,
-  useSidebarOffsetPx,
-} from "./create-campaign.hooks";
-
-import { CaretDown, CaretUp, PaperPlaneTilt } from "@phosphor-icons/react";
 import { useRouter, useSearchParams } from "next/navigation";
+import Confetti from "@/components/ui/ConfettiUi";
+import api, { post, getApiErrorMessage } from "@/lib/api";
+import { toast } from "@/components/ui/toast";
+import { DetailPanel } from "@/app/brand/(protected)/browse-influencer/DetailPanel";
+import { Eye } from "lucide-react";
 
-/* ============================================================================
-   Toast helpers
-============================================================================ */
+const COLORS = ["#FFBF00", "#5E412B", "#F57F17", "#F7E152", "#FEF55B"];
+const INVITATION_CREATOR_LIMIT = 50;
 
-type ApiErrorLike = {
-  message?: unknown;
-  error?: unknown;
-  errors?: unknown;
-  detail?: unknown;
-  data?: unknown;
-  statusText?: unknown;
-  response?: {
-    data?: unknown;
-    statusText?: unknown;
+type Tier = {
+  key?: string;
+  label?: string;
+};
+
+type Creator = {
+  _id?: string;
+  ids?: {
+    modashId?: string;
+    userId?: string | null;
+    youtubeChannelId?: string | null;
+  };
+  channelId?: string | null;
+  channelName?: string;
+  channelUrl?: string;
+  subscriberCount?: number;
+  creatorTier?: string;
+  shortlist?: {
+    score?: number;
+    status?: string;
+    nicheFit?: number;
+    contentQuality?: string;
+  };
+  source?: string;
+  profileSource?: string;
+  name?: string;
+  fullname?: string;
+  username?: string;
+  handle?: string;
+  platform?: string;
+  bio?: string;
+  description?: string;
+  channelDescription?: string;
+  primaryLanguage?: string;
+  provider?: string;
+  followers?: number;
+  tier?: Tier;
+  categories?: string[];
+  category?: string;
+  country?: string;
+  estimatedAudienceCountry?: string;
+  picture?: string;
+  profilePicture?: string;
+  avatar?: string;
+  thumbnail?: string;
+  image?: string;
+  thumbnails?: any;
+  profile?: {
+    picture?: string;
+    profilePicture?: string;
+    avatar?: string;
+    thumbnail?: string;
+    image?: string;
+    thumbnails?: any;
+  };
+  channel?: {
+    thumbnails?: any;
+    snippet?: {
+      thumbnails?: any;
+    };
+  };
+  snippet?: {
+    thumbnails?: any;
+  };
+  url?: string;
+  urls?: {
+    url?: string;
+  };
+  isVerified?: boolean;
+  isPrivate?: boolean;
+  stats?: {
+    engagementRate?: number;
+    engagements?: number;
+    averageViews?: number;
+    authenticityScore?: number;
+    audienceAuthenticityScore?: number;
+    audienceCountryConfidence?: number;
+  };
+  location?: {
+    country?: string;
+    state?: string | null;
+    city?: string | null;
+  };
+  aiScore?: number;
+  rawAiScore?: number;
+  recommendationScore?: number;
+  recommendationReason?: string;
+  audienceAuthenticity?: number;
+  audienceAuthenticityScore?: number;
+  authenticityScore?: number;
+  subscribers?: number;
+  avgViews?: number;
+  engagementRate?: number;
+  scores?: {
+    recommendationScore?: number;
+    campaignFitScore?: number;
+    authenticityScore?: number;
+    audienceAuthenticityScore?: number;
+    audienceCountryConfidence?: number;
+    engagementScore?: number;
+    brandSafetyScore?: number;
+    relevancyScore?: number;
   };
 };
 
-function normalizeErrorValue(value: unknown): string {
-  if (!value) return "";
+type Invitation = {
+  _id?: string;
+  invitationId?: string;
+  brandId?: string | null;
+  campaignId?: string | null;
+  handle?: string | null;
+  platform?: string | null;
+  modashUserId?: string | null;
+  status?: string | null;
+};
 
-  if (typeof value === "string") {
-    return value.trim();
+type CampaignRecommendationSourceResponse = {
+  status?: string;
+  campaignId?: string;
+  requestedPlatforms?: string[];
+  effectivePlatforms?: string[];
+  source?: "youtube_api" | "modash_ai";
+  rule?: string;
+};
+
+type RecommendedCreatorsResponse =
+  | Creator[]
+  | {
+    results?: Creator[];
+    data?: Creator[];
+    processing?: boolean;
+    backgroundStarted?: boolean;
+    jobId?: string;
+    done?: boolean;
+    count?: number;
+    totalFound?: number;
+    returnedCount?: number;
+    savedCount?: number;
+    message?: string;
+    selectedTier?: string;
+    selectedTierRequested?: boolean;
+    campaignSearchContext?: {
+      subscriberTier?: string;
+      tier?: string;
+      creatorTier?: string;
+      minSubscribers?: number | null;
+      maxSubscribers?: number | null;
+    };
+    recommendationBasis?: {
+      subscriberTier?: string;
+      tier?: string;
+      creatorTier?: string;
+      minSubscribers?: number | null;
+      maxSubscribers?: number | null;
+    };
+  };
+
+type RecommendationProgressState = {
+  active: boolean;
+  done: boolean;
+  count: number;
+  target: number;
+  keywords: string[];
+  jobId?: string;
+};
+
+type InvitationListResponse = {
+  status?: string;
+  page?: number;
+  limit?: number;
+  total?: number;
+  hasNext?: boolean;
+  data?: Invitation[];
+  invitations?: Invitation[];
+};
+
+type ModashReportResponse = {
+  error?: boolean;
+  profile?: any;
+  audience?: any;
+  stats?: any;
+  recentPosts?: any[];
+  popularPosts?: any[];
+  sponsoredPosts?: any[];
+  bio?: string;
+  country?: string | null;
+  city?: string | null;
+  state?: string | null;
+  avgLikes?: number;
+  avgComments?: number;
+  avgViews?: number;
+  avgReelsPlays?: number;
+  averageViews?: number;
+  postsCount?: number;
+  postsCounts?: number;
+  _lastFetchedAt?: string;
+  [key: string]: any;
+};
+
+type YouTubeProfileData = {
+  platform?: "youtube";
+  handle?: string | null;
+  channelId?: string | null;
+  title?: string;
+  description?: string;
+  country?: string | null;
+  defaultLanguage?: string | null;
+  thumbnails?: any;
+  topicLabels?: string[];
+  subscriberCount?: number | null;
+  totalViewCount?: number | null;
+  totalVideoCount?: number | null;
+  avgViewsLast15?: number | null;
+  engagementRateLast15?: number | null;
+  uploadFrequencyPerWeek?: number | null;
+  avgDaysBetweenUploads?: number | null;
+  lastUploadAt?: string | null;
+  lastVideoId?: string | null;
+  lastVideoTitle?: string | null;
+  lastVideos?: any[];
+  syncedAt?: string;
+  updatedAt?: string;
+};
+
+type YouTubePreviewResponse = {
+  status?: string;
+  mode?: string;
+  stored?: boolean;
+  data?: YouTubeProfileData;
+};
+
+type ReportCalculationMethod = "median" | "average";
+
+type ReportDrawerState = {
+  open: boolean;
+  creator: Creator | null;
+  loading: boolean;
+  error: string | null;
+  data: ModashReportResponse | null;
+  raw: ModashReportResponse | null;
+  lastFetchedAt: string | null;
+  calculationMethod: ReportCalculationMethod;
+};
+
+type NavigateTarget = "next" | "dashboard";
+
+function formatCompact(n?: number) {
+  if (typeof n !== "number" || Number.isNaN(n)) return "—";
+
+  return new Intl.NumberFormat("en", {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(n);
+}
+
+function normalizeHandle(h?: string | null) {
+  if (!h) return "";
+
+  const trimmed = String(h).trim();
+  if (!trimmed) return "";
+
+  return trimmed.startsWith("@")
+    ? trimmed.toLowerCase()
+    : `@${trimmed.toLowerCase()}`;
+}
+
+function looksLikeYouTubeChannelId(value?: string | null) {
+  const raw = String(value || "").trim().replace(/^@/, "");
+  return /^UC[A-Za-z0-9_-]{20,}$/.test(raw);
+}
+
+function getCleanCreatorHandle(value?: string | null) {
+  if (!value || looksLikeYouTubeChannelId(value)) return "";
+  return normalizeHandle(value);
+}
+
+function isRecommendationReasonText(value?: string | null) {
+  const text = String(value || "").trim();
+  if (!text) return false;
+
+  return (
+    /Matched campaign topic:/i.test(text) ||
+    /Creator country matches/i.test(text) ||
+    /Best suited for/i.test(text) ||
+    /average views/i.test(text) ||
+    /engagement rate/i.test(text) ||
+    /recommendation score/i.test(text)
+  );
+}
+
+function normalizePlatformArray(input?: string[] | null) {
+  const raw = Array.isArray(input) ? input : [];
+
+  return Array.from(
+    new Set(
+      raw
+        .map((platform) => normalizePlatform(platform))
+        .filter((platform) =>
+          ["youtube", "instagram", "tiktok"].includes(platform)
+        )
+    )
+  );
+}
+
+function getRecommendationSourceFromPlatforms(platforms?: string[] | null) {
+  const normalized = normalizePlatformArray(platforms);
+
+  if (normalized.includes("youtube")) {
+    return {
+      source: "youtube_api" as const,
+      effectivePlatforms: ["youtube"],
+      rule: "youtube_selected_use_youtube_api_only",
+    };
   }
 
-  if (typeof value === "number" || typeof value === "boolean") {
-    return String(value);
+  return {
+    source: "modash_ai" as const,
+    effectivePlatforms: normalized.filter((p) => p !== "youtube"),
+    rule: "no_youtube_use_modash_ai_only",
+  };
+}
+
+function getResolvedRecommendationSource(
+  data?: CampaignRecommendationSourceResponse | null
+) {
+  const requestedPlatforms = normalizePlatformArray(data?.requestedPlatforms);
+  const fallback = getRecommendationSourceFromPlatforms(requestedPlatforms);
+
+  const source = data?.source || fallback.source;
+  let effectivePlatforms = normalizePlatformArray(data?.effectivePlatforms);
+
+  if (!effectivePlatforms.length) {
+    effectivePlatforms = fallback.effectivePlatforms;
   }
 
-  if (Array.isArray(value)) {
-    return value
-      .map((item) => normalizeErrorValue(item))
-      .filter(Boolean)
-      .join(", ");
+  if (source === "youtube_api") {
+    effectivePlatforms = ["youtube"];
+  } else {
+    effectivePlatforms = effectivePlatforms.filter((p) => p !== "youtube");
   }
 
-  if (typeof value === "object") {
-    const objectValue = value as Record<string, unknown>;
+  return {
+    source,
+    requestedPlatforms,
+    effectivePlatforms,
+    rule:
+      data?.rule ||
+      (source === "youtube_api"
+        ? "youtube_selected_use_youtube_api_only"
+        : "no_youtube_use_modash_ai_only"),
+  };
+}
 
-    const directMessage =
-      normalizeErrorValue(objectValue.message) ||
-      normalizeErrorValue(objectValue.error) ||
-      normalizeErrorValue(objectValue.detail) ||
-      normalizeErrorValue(objectValue.msg);
+function normalizePlatform(platform?: string | null) {
+  const p = String(platform || "").trim().toLowerCase();
 
-    if (directMessage) return directMessage;
+  if (p === "yt") return "youtube";
+  if (p === "ig") return "instagram";
+  if (p === "tt") return "tiktok";
 
-    return Object.entries(objectValue)
-      .map(([key, item]) => {
-        const itemMessage = normalizeErrorValue(item);
-        return itemMessage ? `${key}: ${itemMessage}` : "";
-      })
-      .filter(Boolean)
-      .join(", ");
+  return p;
+}
+
+function getCreatorName(c: Creator) {
+  const anyCreator = c as any;
+
+  return (
+    c.name ||
+    c.fullname ||
+    c.username ||
+    c.handle ||
+    c.channelName ||
+    anyCreator.rawCreator?.channelName ||
+    anyCreator.rawCreator?.name ||
+    "Unknown Creator"
+  );
+}
+
+function getCreatorHandle(c: Creator) {
+  return getCleanCreatorHandle(c.handle || c.username);
+}
+
+function getCreatorPlatform(c: Creator) {
+  const platform = normalizePlatform(c.platform || c.provider);
+  if (platform) return platform;
+
+  if (
+    c.source === "youtube_api" ||
+    c.profileSource === "youtube_api" ||
+    c.channelId ||
+    c.ids?.youtubeChannelId
+  ) {
+    return "youtube";
   }
 
   return "";
 }
 
-function getBackendErrorMessage(
-  error: unknown,
-  fallback = "Something went wrong."
-) {
-  const apiMessage = getApiErrorMessage(error as any);
+function getTierFromFollowerCount(followers?: number | null) {
+  const count = Number(followers || 0);
 
-  if (
-    apiMessage &&
-    apiMessage.trim() &&
-    apiMessage !== "Something went wrong"
-  ) {
-    return apiMessage;
+  if (count >= 1000000) return "Mega";
+  if (count >= 500000) return "Macro";
+  if (count >= 100000) return "Mid-tier";
+  if (count >= 10000) return "Micro";
+  if (count >= 1000) return "Nano";
+
+  return "—";
+}
+
+function getCreatorIdentityKey(c: Creator) {
+  const platform = getCreatorPlatform(c);
+  const modashId = getCreatorModashId(c);
+  const channelId = getCreatorChannelId(c);
+  const handle = getCreatorHandle(c);
+  const url = String(c.url || c.urls?.url || "").trim().toLowerCase();
+
+  if (channelId && platform) return `channel:${platform}:${channelId}`;
+  if (modashId && platform) return `modash:${platform}:${modashId}`;
+  if (handle && platform) return `handle:${platform}:${handle}`;
+  if (url && platform) return `url:${platform}:${url}`;
+
+  return `${platform}:${getCreatorName(c).toLowerCase()}`;
+}
+
+type ResolvedRecommendationSource = ReturnType<
+  typeof getResolvedRecommendationSource
+>;
+
+function cleanStr(value: unknown): string {
+  if (value === null || typeof value === "undefined") return "";
+  return String(value).trim();
+}
+
+function normalizeCreatorForRecommendationSource(
+  creator: Creator,
+  sourceInfo: ResolvedRecommendationSource
+): Creator {
+  if (sourceInfo.source === "youtube_api") {
+    const anyCreator = creator as any;
+    const rawCreator = anyCreator.rawCreator || {};
+    const channelName =
+      creator.channelName ||
+      rawCreator.channelName ||
+      creator.name ||
+      creator.fullname ||
+      creator.username ||
+      "YouTube Creator";
+    const channelId =
+      creator.channelId ||
+      creator.ids?.youtubeChannelId ||
+      rawCreator.channelId ||
+      "";
+    const channelUrl =
+      creator.channelUrl ||
+      rawCreator.channelUrl ||
+      creator.url ||
+      creator.urls?.url ||
+      (channelId ? `https://www.youtube.com/channel/${channelId}` : "");
+    const youtubeHandleFromUrl =
+      cleanStr(channelUrl).match(/youtube\.com\/@([^/?#]+)/i)?.[1] || "";
+    const followers = Number(
+      creator.followers ??
+        creator.subscribers ??
+        creator.subscriberCount ??
+        rawCreator.subscribers ??
+        rawCreator.subscriberCount ??
+        0
+    );
+    const tierLabel =
+      creator.tier?.label ||
+      creator.tier?.key ||
+      creator.creatorTier ||
+      rawCreator.creatorTier ||
+      getTierFromFollowerCount(followers);
+    const thumbnail =
+      getCreatorPicture(creator) ||
+      creator.thumbnail ||
+      rawCreator.thumbnail ||
+      creator.picture ||
+      "";
+    const description = cleanStr(
+      creator.description ||
+        creator.channelDescription ||
+        creator.bio ||
+        rawCreator.description ||
+        rawCreator.channelDescription ||
+        rawCreator.bio ||
+        rawCreator.channelDescription
+    );
+    const country = cleanStr(
+      creator.country ||
+        creator.location?.country ||
+        rawCreator.country ||
+        rawCreator.location?.country ||
+        creator.estimatedAudienceCountry ||
+        rawCreator.estimatedAudienceCountry
+    );
+    const estimatedAudienceCountry = cleanStr(
+      creator.estimatedAudienceCountry || rawCreator.estimatedAudienceCountry || country
+    );
+
+    return {
+      ...creator,
+      name: channelName,
+      fullname: channelName,
+      username: creator.username || creator.handle || youtubeHandleFromUrl || undefined,
+      handle: creator.handle || (youtubeHandleFromUrl ? `@${youtubeHandleFromUrl}` : creator.handle),
+      channelName,
+      channelId,
+      channelUrl,
+      url: channelUrl,
+      bio: description || creator.bio,
+      description,
+      channelDescription: description,
+      country,
+      estimatedAudienceCountry,
+      followers: Number.isFinite(followers) && followers > 0 ? followers : undefined,
+      subscribers: Number.isFinite(followers) && followers > 0 ? followers : creator.subscribers,
+      tier: creator.tier || { key: tierLabel, label: tierLabel },
+      picture: thumbnail,
+      thumbnail,
+      platform: "youtube",
+      source: creator.source || "youtube_api",
+      profileSource: creator.profileSource || "youtube_api",
+    };
   }
 
-  const err = error as ApiErrorLike | undefined;
+  const platform = getCreatorPlatform(creator);
+  const fallbackPlatform = sourceInfo.effectivePlatforms[0] || platform;
 
+  return {
+    ...creator,
+    picture: getCreatorPicture(creator) || creator.picture,
+    platform: platform || fallbackPlatform,
+  };
+}
+
+function filterCreatorsForRecommendationSource(
+  creators: Creator[],
+  sourceInfo: ResolvedRecommendationSource
+) {
+  const allowedPlatforms = new Set(sourceInfo.effectivePlatforms);
+  const deduped = new Map<string, Creator>();
+
+  creators
+    .map((creator) =>
+      normalizeCreatorForRecommendationSource(creator, sourceInfo)
+    )
+    .forEach((creator) => {
+      const platform = getCreatorPlatform(creator);
+
+      if (!platform || !allowedPlatforms.has(platform)) return;
+      if (sourceInfo.source === "youtube_api" && !isYouTubeCreator(creator)) {
+        return;
+      }
+
+      const key = getCreatorIdentityKey(creator);
+      if (!deduped.has(key)) {
+        deduped.set(key, creator);
+      }
+    });
+
+  return Array.from(deduped.values());
+}
+
+function getCreatorModashId(c: Creator) {
+  return c.ids?.modashId || c.ids?.userId || c._id || "";
+}
+
+function getCreatorChannelId(c: Creator) {
+  return (
+    c.channelId ||
+    c.ids?.youtubeChannelId ||
+    (getCreatorPlatform(c) === "youtube" ? getCreatorModashId(c) : "") ||
+    ""
+  );
+}
+
+function isYouTubeCreator(c?: Creator | null) {
+  if (!c) return false;
+
+  return (
+    getCreatorPlatform(c) === "youtube" ||
+    c.source === "youtube_api" ||
+    c.profileSource === "youtube_api" ||
+    Boolean(c.channelId || c.channelName || c.channelUrl)
+  );
+}
+
+function pickYouTubeThumb(thumbnails?: any) {
+  return (
+    thumbnails?.high?.url ||
+    thumbnails?.medium?.url ||
+    thumbnails?.default?.url ||
+    null
+  );
+}
+
+function numOrUndefined(value?: number | null) {
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
+}
+
+function pickVideoThumb(video: any) {
+  return (
+    video?.thumbnails?.maxres?.url ||
+    video?.thumbnails?.standard?.url ||
+    video?.thumbnails?.high?.url ||
+    video?.thumbnails?.medium?.url ||
+    video?.thumbnails?.default?.url ||
+    null
+  );
+}
+
+function sumNumbers(items: any[], key: string) {
+  return items.reduce((sum, item) => {
+    const value = Number(item?.[key] || 0);
+    return sum + (Number.isFinite(value) ? value : 0);
+  }, 0);
+}
+
+function avgNumber(items: any[], key: string) {
+  if (!items.length) return undefined;
+
+  const total = sumNumbers(items, key);
+  return Math.round(total / items.length);
+}
+
+function mapYouTubePreviewToReport(data: YouTubeProfileData): ModashReportResponse {
+  const handle = data.handle || null;
+  const username = handle
+    ? handle.replace(/^@/, "")
+    : data.channelId || null;
+
+  const url = handle
+    ? `https://www.youtube.com/${handle}`
+    : data.channelId
+      ? `https://www.youtube.com/channel/${data.channelId}`
+      : null;
+
+  const videos = Array.isArray(data.lastVideos) ? data.lastVideos : [];
+
+  const recentPosts = videos.map((video) => {
+    const image = pickVideoThumb(video);
+
+    return {
+      id: video.videoId,
+      videoId: video.videoId,
+      title: video.title,
+      text: video.title,
+      caption: video.description || video.title,
+      description: video.description || "",
+      created: video.publishedAt,
+      createdAt: video.publishedAt,
+      publishedAt: video.publishedAt,
+      postedAt: video.publishedAt,
+      date: video.publishedAt,
+      views: numOrUndefined(video.viewCount),
+      plays: numOrUndefined(video.viewCount),
+      likes: numOrUndefined(video.likeCount),
+      comments: numOrUndefined(video.commentCount),
+      duration: video.duration,
+      image,
+      thumbnail: image,
+      url:
+        video.videoUrl ||
+        (video.videoId
+          ? `https://www.youtube.com/watch?v=${video.videoId}`
+          : null),
+      type: "YouTube video",
+    };
+  });
+
+  const popularPosts = [...recentPosts].sort(
+    (a, b) => Number(b.views || 0) - Number(a.views || 0)
+  );
+
+  const avgLikes = avgNumber(videos, "likeCount");
+  const avgComments = avgNumber(videos, "commentCount");
+
+  const followers = numOrUndefined(data.subscriberCount);
+  const avgViews = numOrUndefined(data.avgViewsLast15);
+  const engagementRate = numOrUndefined(data.engagementRateLast15);
+  const totalViews = numOrUndefined(data.totalViewCount);
+  const totalVideos = numOrUndefined(data.totalVideoCount);
+  const uploadFrequencyPerWeek = numOrUndefined(data.uploadFrequencyPerWeek);
+
+  const categoryObjects = Array.isArray(data.topicLabels)
+    ? data.topicLabels.map((label) => ({
+      categoryName: label,
+      name: label,
+    }))
+    : [];
+
+  const profile = {
+    userId: data.channelId || null,
+    username,
+    handle,
+    fullname: data.title || username || "YouTube Creator",
+    name: data.title || username || "YouTube Creator",
+    url,
+    picture: pickYouTubeThumb(data.thumbnails),
+    followers,
+    engagements: undefined,
+    engagementRate,
+    averageViews: avgViews,
+    avgViews,
+    bio: data.description || "",
+    description: data.description || "",
+    country: data.country || null,
+    defaultLanguage: data.defaultLanguage || null,
+    language: data.defaultLanguage
+      ? { name: data.defaultLanguage }
+      : undefined,
+    recentPosts,
+    popularPosts,
+    postsCount: totalVideos,
+    postsCounts: totalVideos,
+    categories: categoryObjects,
+  };
+
+  return {
+    _source: "youtube_api",
+    _cacheOnly: true,
+    _lastFetchedAt: data.syncedAt || data.updatedAt || new Date().toISOString(),
+    provider: "youtube",
+
+    profile,
+
+    userId: data.channelId || null,
+    username,
+    handle,
+    fullname: profile.fullname,
+    name: profile.name,
+    url,
+    picture: profile.picture,
+
+    bio: data.description || "",
+    description: data.description || "",
+    country: data.country || null,
+    language: profile.language,
+
+    followers,
+    engagementRate,
+    avgLikes,
+    avgComments,
+    avgViews,
+    averageViews: avgViews,
+    totalViews,
+    postsCount: totalVideos,
+    postsCounts: totalVideos,
+
+    recentPosts,
+    popularPosts,
+    sponsoredPosts: [],
+
+    stats: {
+      followers: {
+        value: followers,
+      },
+      avgLikes: {
+        value: avgLikes,
+      },
+      avgComments: {
+        value: avgComments,
+      },
+      avgViews: {
+        value: avgViews,
+      },
+      averageViews: avgViews,
+      engagementRate,
+      uploadFrequencyPerWeek,
+      totalViews,
+      totalVideos,
+    },
+
+    audience: {
+      geoCountries: data.country
+        ? [{ name: data.country, weight: 1 }]
+        : [],
+      ages: [],
+      genders: [],
+      languages: data.defaultLanguage
+        ? [{ code: data.defaultLanguage, name: data.defaultLanguage, weight: 1 }]
+        : [],
+      interests: Array.isArray(data.topicLabels)
+        ? data.topicLabels.map((name) => ({ name, weight: 1 }))
+        : [],
+      credibility: null,
+    },
+
+    categories: categoryObjects,
+    hashtags: [],
+    lookalikes: [],
+    statHistory: [],
+  };
+}
+
+function getCreatorAiScore(c: Creator) {
+  if (typeof c.aiScore !== "number" || Number.isNaN(c.aiScore)) return null;
+
+  return Math.max(0, Math.min(100, Math.round(c.aiScore)));
+}
+
+function getRecommendedCreators(data: RecommendedCreatorsResponse): Creator[] {
+  if (Array.isArray(data)) return data;
+
+  const anyData = data as any;
+
+  if (Array.isArray(data?.results)) return data.results;
+  if (Array.isArray(data?.data)) return data.data;
+  if (Array.isArray(anyData?.creators)) return anyData.creators;
+  if (Array.isArray(anyData?.recommendations)) return anyData.recommendations;
+  if (Array.isArray(anyData?.recommendedCreators)) return anyData.recommendedCreators;
+
+  return [];
+}
+
+function mergeCreatorsTopToBottom(prev: Creator[], next: Creator[]) {
+  const seen = new Set<string>();
+  const merged: Creator[] = [];
+
+  [...prev, ...next].forEach((creator) => {
+    const key = getCreatorIdentityKey(creator);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    merged.push(creator);
+  });
+
+  return merged;
+}
+
+const INVITE_PROGRESS_KEYWORDS = [
+  "YouTube creators",
+  "AI scout",
+  "Campaign fit",
+  "Audience authenticity",
+  "Brand safety",
+  "Creator shortlist",
+];
+
+function getRecommendationProgressKeywords(_data: RecommendedCreatorsResponse): string[] {
+  return INVITE_PROGRESS_KEYWORDS;
+}
+
+
+function getExistingInvitations(data: InvitationListResponse): Invitation[] {
+  if (Array.isArray(data?.data)) return data.data;
+  if (Array.isArray(data?.invitations)) return data.invitations;
+  return [];
+}
+
+function getCreatorBio(c: Creator) {
+  const anyCreator = c as any;
   const candidates = [
-    err?.response?.data,
-    err?.data,
-    err?.errors,
-    err?.error,
-    err?.detail,
-    err?.message,
-    err?.response?.statusText,
-    err?.statusText,
-    error,
+    c.description,
+    c.channelDescription,
+    c.bio,
+    anyCreator.rawCreator?.description,
+    anyCreator.rawCreator?.channelDescription,
+    anyCreator.rawCreator?.bio,
+    anyCreator.channelDescription,
+    anyCreator.recommendationReason,
   ];
 
   for (const candidate of candidates) {
-    const message = normalizeErrorValue(candidate);
-    if (message) return message;
+    const text = cleanStr(candidate).replace(/\s+/g, " ").trim();
+    if (!text || isRecommendationReasonText(text)) continue;
+    return text;
   }
 
-  return fallback;
+  return "";
 }
 
-function toastSuccess(title: string, description?: string) {
-  return toast({
-    icon: "success",
-    title,
-    text: description,
-    timer: 2500,
-  });
-}
+function getCreatorFollowers(c: Creator) {
+  const anyCreator = c as any;
+  const candidates = [
+    c.followers,
+    c.subscribers,
+    c.subscriberCount,
+    anyCreator.rawCreator?.subscribers,
+    anyCreator.rawCreator?.subscriberCount,
+    anyCreator.stats?.followers?.value,
+  ];
 
-function toastError(title: string, description?: string) {
-  return toast({
-    icon: "error",
-    title,
-    text: description,
-    timer: 4000,
-  });
-}
-
-function toastWarning(title: string, description?: string) {
-  return toast({
-    icon: "warning",
-    title,
-    text: description,
-    timer: 4000,
-  });
-}
-
-/* ============================================================================
-   Shared UI bits
-============================================================================ */
-
-function CenterWrap({
-  children,
-  withBottomBar = false,
-}: {
-  children: React.ReactNode;
-  withBottomBar?: boolean;
-}) {
-  return (
-    <div className={cn("cg-center-wrap", withBottomBar && "cg-center-wrap--with-bottom")}>
-      {children}
-    </div>
-  );
-}
-
-function ProgressBar({
-  value,
-  barClassName = "bg-neutral-900",
-  heightClassName = "h-[2px]",
-}: {
-  value: number;
-  barClassName?: string;
-  heightClassName?: string;
-}) {
-  const safe = Math.max(0, Math.min(100, value));
-
-  return (
-    <div className="w-full">
-      <div className="flex items-center justify-between text-[12px] text-neutral-600">
-        <span>{safe}%</span>
-        <span>100%</span>
-      </div>
-      <div
-        className={cn(
-          "mt-2 w-full overflow-hidden rounded-pill bg-neutral-150",
-          heightClassName
-        )}
-      >
-        <div
-          className={cn(
-            "h-full rounded-pill transition-[width] duration-200 ease-out",
-            barClassName
-          )}
-          style={{ width: `${safe}%` }}
-        />
-      </div>
-    </div>
-  );
-}
-
-function useViewportWidth() {
-  const [w, setW] = React.useState(() =>
-    typeof window !== "undefined" ? window.innerWidth : 0
-  );
-
-  React.useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    const vv = window.visualViewport;
-
-    const update = () => {
-      const next = Math.round(vv?.width ?? window.innerWidth);
-      setW((prev) => (prev === next ? prev : next));
-    };
-
-    update();
-
-    window.addEventListener("resize", update, { passive: true });
-    window.addEventListener("orientationchange", update, { passive: true });
-    vv?.addEventListener("resize", update);
-
-    return () => {
-      window.removeEventListener("resize", update);
-      window.removeEventListener("orientationchange", update);
-      vv?.removeEventListener("resize", update);
-    };
-  }, []);
-
-  return w;
-}
-
-function FixedBottomBar({
-  sidebarOffsetPx,
-  left,
-  right,
-  containerMaxWidth = 1200,
-}: {
-  sidebarOffsetPx: number;
-  left?: React.ReactNode;
-  right?: React.ReactNode;
-  containerMaxWidth?: number;
-}) {
-  const viewportW = useViewportWidth();
-  const barRef = React.useRef<HTMLDivElement | null>(null);
-
-  React.useLayoutEffect(() => {
-    if (!barRef.current || typeof window === "undefined") return;
-
-    const el = barRef.current;
-    let last = -1;
-
-    const setH = () => {
-      const h = Math.ceil(el.getBoundingClientRect().height);
-      if (h !== last) {
-        last = h;
-        document.documentElement.style.setProperty("--cg-bottombar-h", `${h}px`);
-      }
-    };
-
-    setH();
-
-    const ro = new ResizeObserver(() => setH());
-    ro.observe(el);
-
-    window.addEventListener("resize", setH, { passive: true });
-
-    return () => {
-      ro.disconnect();
-      window.removeEventListener("resize", setH);
-    };
-  }, []);
-
-  const clampedMaxW = React.useMemo(() => {
-    const contentW = Math.max(0, viewportW - (sidebarOffsetPx || 0));
-    return Math.max(0, Math.min(containerMaxWidth, contentW || containerMaxWidth));
-  }, [viewportW, sidebarOffsetPx, containerMaxWidth]);
-
-  return (
-    <div
-      ref={barRef}
-      className="cg-bottom-bar"
-      style={{
-        left: sidebarOffsetPx,
-        right: 0,
-        ["--cg-bottombar-maxw" as any]: `${clampedMaxW}px`,
-      }}
-    >
-      <div
-        className={cn(
-          "cg-bottom-bar-inner",
-          "flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
-        )}
-      >
-        <div className="flex flex-wrap items-center gap-2">{left}</div>
-        <div className="flex flex-wrap items-center gap-2 sm:justify-end">{right}</div>
-      </div>
-    </div>
-  );
-}
-
-/* ============================================================================
-   Forms
-============================================================================ */
-
-type ExistingProductImage = {
-  dataUrl?: string;
-  url?: string;
-  name?: string;
-  type?: string;
-  contentType?: string;
-  originalSize?: number;
-  size?: number;
-  key?: string;
-};
-
-type ManualForm = {
-  title: string;
-  description: string;
-  campaignType: string;
-
-  categoryId: string;
-  categoryName: string;
-  subcategories: string[];
-
-  productFiles: File[];
-  productLink: string;
-
-  goals: string[];
-  numberOfInfluencers: number;
-  influencerTier: string[];
-  minFollowers: number;
-  maxFollowers: number;
-
-  contentFormats: string[];
-  contentLanguage: string[];
-
-  paymentType: string;
-  campaignBudget: number;
-  startDate: string;
-  endDate: string;
-
-  platforms: string[];
-  targetCountry: string[];
-  targetAgeGroups: string[];
-
-  additionalNotes: string;
-  attachment: File | null;
-
-  hashtags: string[];
-};
-
-const EMPTY_MANUAL: ManualForm = {
-  title: "",
-  description: "",
-  campaignType: "",
-  categoryId: "",
-  categoryName: "",
-  subcategories: [],
-  productFiles: [],
-  productLink: "",
-
-  goals: [],
-  numberOfInfluencers: 0,
-  influencerTier: [],
-  minFollowers: 0,
-  maxFollowers: 0,
-
-  contentFormats: [],
-  contentLanguage: [],
-
-  paymentType: "",
-  campaignBudget: 0,
-  startDate: "",
-  endDate: "",
-
-  platforms: [],
-  targetCountry: [],
-  targetAgeGroups: [],
-
-  additionalNotes: "",
-  attachment: null,
-
-  hashtags: [],
-};
-
-const clampNonNegative = (v: string | number) => {
-  const n = Number(v);
-  if (!Number.isFinite(n)) return 0;
-  return Math.max(0, n);
-};
-
-type TierRange = { min?: number; max?: number };
-
-const parseAbbrevNumber = (raw: string): number | null => {
-  if (!raw) return null;
-
-  let s = String(raw).trim().toUpperCase();
-  s = s.replace(/[, ]+/g, "").replace(/\+$/, "");
-
-  const m = s.match(/^(\d+(?:\.\d+)?)([KMB])?$/);
-  if (!m) return null;
-
-  const n = Number(m[1]);
-  if (!Number.isFinite(n)) return null;
-
-  const unit = m[2];
-  const mul = unit === "K" ? 1e3 : unit === "M" ? 1e6 : unit === "B" ? 1e9 : 1;
-
-  return Math.round(n * mul);
-};
-
-const parseRangeFromText = (text?: string): TierRange | null => {
-  if (!text) return null;
-
-  const paren = text.match(/\(([^)]+)\)/)?.[1] ?? text;
-
-  const normalized = String(paren)
-    .trim()
-    .replace(/[–—]/g, "-")
-    .replace(/\bto\b/gi, "-");
-
-  const parts = normalized
-    .split("-")
-    .map((x) => x.trim())
-    .filter(Boolean);
-
-  if (parts.length >= 2) {
-    const min = parseAbbrevNumber(parts[0]);
-    const max = parseAbbrevNumber(parts[1]);
-
-    if (min == null && max == null) return null;
-
-    return {
-      min: min ?? undefined,
-      max: max ?? undefined,
-    };
+  for (const candidate of candidates) {
+    const n = Number(candidate);
+    if (Number.isFinite(n) && n > 0) return n;
   }
 
-  if (parts.length === 1) {
-    const n = parseAbbrevNumber(parts[0]);
-    if (n == null) return null;
+  return undefined;
+}
 
-    return {
-      min: n,
-      max: n,
-    };
-  }
+function getCreatorTierLabel(c: Creator) {
+  const anyCreator = c as any;
+  const direct = cleanStr(
+    c.tier?.label ||
+      c.tier?.key ||
+      c.creatorTier ||
+      anyCreator.rawCreator?.creatorTier ||
+      anyCreator.rawCreator?.tier?.label ||
+      anyCreator.rawCreator?.tier?.key
+  );
+
+  if (direct && direct !== "—") return direct;
+
+  const followers = getCreatorFollowers(c);
+  return followers ? getTierFromFollowerCount(followers) : "—";
+}
+
+function normalizeTierKey(value?: string | null) {
+  const tier = cleanStr(value).toLowerCase().replace(/[–—]/g, "-");
+  if (!tier) return "";
+
+  if (/nano/.test(tier) || /1k\s*-\s*10k/.test(tier)) return "nano";
+  if (/micro/.test(tier) || /10k\s*-\s*100k/.test(tier)) return "micro";
+  if (/mid/.test(tier) || /100k\s*-\s*500k/.test(tier)) return "mid-tier";
+  if (/macro/.test(tier) || /250k\s*-\s*1m/.test(tier) || /500k\s*-\s*1m/.test(tier)) return "macro";
+  if (/mega/.test(tier) || /1m\s*\+/.test(tier) || /1000k\s*\+/.test(tier)) return "mega";
+
+  return tier;
+}
+
+function getTierRangeFromKey(tier?: string | null) {
+  const key = normalizeTierKey(tier);
+
+  if (key === "nano") return { min: 1000, max: 10000 };
+  if (key === "micro") return { min: 10000, max: 100000 };
+  if (key === "mid-tier") return { min: 100000, max: 500000 };
+  if (key === "macro") return { min: 500000, max: 1000000 };
+  if (key === "mega") return { min: 1000000, max: null };
 
   return null;
-};
-
-const aggregateRanges = (
-  ranges: Array<TierRange | null | undefined>
-): TierRange | null => {
-  let min: number | undefined;
-  let max: number | undefined;
-
-  for (const r of ranges) {
-    if (!r) continue;
-
-    if (typeof r.min === "number") {
-      min = min === undefined ? r.min : Math.min(min, r.min);
-    }
-
-    if (typeof r.max === "number") {
-      max = max === undefined ? r.max : Math.max(max, r.max);
-    }
-  }
-
-  if (min === undefined && max === undefined) return null;
-
-  return { min, max };
-};
-
-const todayISO = () => {
-  const d = new Date();
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-
-  return `${yyyy}-${mm}-${dd}`;
-};
-
-const toLocalDate = (iso?: string) => {
-  if (!iso) return null;
-
-  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!m) return null;
-
-  const y = Number(m[1]);
-  const mo = Number(m[2]) - 1;
-  const d = Number(m[3]);
-  const dt = new Date(y, mo, d);
-
-  return Number.isFinite(dt.getTime()) ? dt : null;
-};
-
-const addDaysISO = (iso: string, days: number) => {
-  const d = toLocalDate(iso);
-  if (!d) return "";
-
-  d.setDate(d.getDate() + days);
-
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-
-  return `${yyyy}-${mm}-${dd}`;
-};
-
-const isSameOrBeforeISO = (a?: string, b?: string) => {
-  const da = toLocalDate(a);
-  const db = toLocalDate(b);
-
-  if (!da || !db) return false;
-
-  return da.getTime() <= db.getTime();
-};
-
-const TODAY = todayISO();
-
-/* ============================================================================
-   Actor-aware payload helpers
-============================================================================ */
-
-type ActorAwareCreatePayload = CreateCampaignManualPayload & {
-  adminId?: string;
-  adminEmail?: string;
-};
-
-type ActorAwareEditPayload = EditDraftPayload & {
-  adminId?: string;
-  adminEmail?: string;
-};
-
-function getOptionalAdminPayload(): { adminId?: string; adminEmail?: string } {
-  if (typeof window === "undefined") return {};
-
-  const adminId =
-    localStorage.getItem("adminId") ||
-    sessionStorage.getItem("adminId") ||
-    "";
-
-  const adminEmail =
-    localStorage.getItem("adminEmail") ||
-    sessionStorage.getItem("adminEmail") ||
-    "";
-
-  return compact({
-    ...(adminId ? { adminId } : {}),
-    ...(adminEmail ? { adminEmail } : {}),
-  }) as { adminId?: string; adminEmail?: string };
 }
 
-function getStoredBrandId() {
+function getRequestedTierFromRecommendationResponse(data: RecommendedCreatorsResponse) {
+  if (!data || Array.isArray(data)) return "";
+
+  const anyData = data as any;
+  return cleanStr(
+    data.campaignSearchContext?.subscriberTier ||
+      data.campaignSearchContext?.tier ||
+      data.campaignSearchContext?.creatorTier ||
+      data.recommendationBasis?.subscriberTier ||
+      data.recommendationBasis?.tier ||
+      data.recommendationBasis?.creatorTier ||
+      anyData.selectedTier ||
+      anyData.selectedTierLabel ||
+      anyData.requestedTier
+  );
+}
+
+function isCreatorInRequestedTier(c: Creator, requestedTier?: string | null) {
+  const normalizedRequested = normalizeTierKey(requestedTier);
+  if (!normalizedRequested) return true;
+
+  const directCreatorTier = normalizeTierKey(getCreatorTierLabel(c));
+  if (directCreatorTier && directCreatorTier === normalizedRequested) return true;
+
+  const followers = getCreatorFollowers(c);
+  const range = getTierRangeFromKey(normalizedRequested);
+  if (!followers || !range) return false;
+
+  if (followers < range.min) return false;
+  if (range.max !== null && followers > range.max) return false;
+
+  return true;
+}
+
+function sortCreatorsForCampaignTier(creators: Creator[], requestedTier?: string | null) {
+  const normalizedRequested = normalizeTierKey(requestedTier);
+
+  return [...creators].sort((a, b) => {
+    if (normalizedRequested) {
+      const aMatch = isCreatorInRequestedTier(a, normalizedRequested) ? 1 : 0;
+      const bMatch = isCreatorInRequestedTier(b, normalizedRequested) ? 1 : 0;
+      if (aMatch !== bMatch) return bMatch - aMatch;
+    }
+
+    const aScore = Number((a as any).recommendationScore || a.scores?.recommendationScore || a.scores?.campaignFitScore || a.aiScore || 0);
+    const bScore = Number((b as any).recommendationScore || b.scores?.recommendationScore || b.scores?.campaignFitScore || b.aiScore || 0);
+    if (aScore !== bScore) return bScore - aScore;
+
+    return Number(getCreatorFollowers(b) || 0) - Number(getCreatorFollowers(a) || 0);
+  });
+}
+
+function getCreatorCountryLabel(c: Creator) {
+  const anyCreator = c as any;
+  const value = cleanStr(
+    c.country ||
+      c.location?.country ||
+      anyCreator.rawCreator?.country ||
+      anyCreator.rawCreator?.location?.country ||
+      c.estimatedAudienceCountry ||
+      anyCreator.rawCreator?.estimatedAudienceCountry
+  );
+
+  return value || "—";
+}
+
+function cleanImageUrl(value?: string | null) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+
+  if (raw.startsWith("//")) return `https:${raw}`;
+  if (raw.startsWith("http://")) return raw.replace(/^http:\/\//i, "https://");
+  if (raw.startsWith("https://")) return raw;
+
+  return "";
+}
+
+function pickThumbnailUrl(thumbnails?: any) {
+  if (!thumbnails) return "";
+  if (typeof thumbnails === "string") return cleanImageUrl(thumbnails);
+
+  return cleanImageUrl(
+    thumbnails?.maxres?.url ||
+    thumbnails?.standard?.url ||
+    thumbnails?.high?.url ||
+    thumbnails?.medium?.url ||
+    thumbnails?.default?.url ||
+    thumbnails?.url ||
+    ""
+  );
+}
+
+function getCreatorPictureUrls(c: Creator) {
+  const candidates = [
+    c.picture,
+    c.profilePicture,
+    c.avatar,
+    c.thumbnail,
+    c.image,
+    c.profile?.picture,
+    c.profile?.profilePicture,
+    c.profile?.avatar,
+    c.profile?.thumbnail,
+    c.profile?.image,
+    pickThumbnailUrl(c.thumbnails),
+    pickThumbnailUrl(c.profile?.thumbnails),
+    pickThumbnailUrl(c.channel?.thumbnails),
+    pickThumbnailUrl(c.channel?.snippet?.thumbnails),
+    pickThumbnailUrl(c.snippet?.thumbnails),
+  ];
+
+  const out: string[] = [];
+  const seen = new Set<string>();
+
+  candidates.forEach((candidate) => {
+    const url = cleanImageUrl(candidate);
+    if (!url) return;
+
+    const alternates = [url];
+
+    if (url.includes("yt3.ggpht.com")) {
+      alternates.push(url.replace("yt3.ggpht.com", "yt3.googleusercontent.com"));
+    }
+
+    if (url.includes("yt3.googleusercontent.com")) {
+      alternates.push(url.replace("yt3.googleusercontent.com", "yt3.ggpht.com"));
+    }
+
+    alternates.forEach((alternate) => {
+      const key = alternate.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      out.push(alternate);
+    });
+  });
+
+  return out;
+}
+
+function getCreatorPicture(c: Creator) {
+  return getCreatorPictureUrls(c)[0] || "";
+}
+
+function CreatorAvatar({ creator, name }: { creator: Creator; name: string }) {
+  const imageUrls = React.useMemo(() => getCreatorPictureUrls(creator), [creator]);
+  const [imageIndex, setImageIndex] = React.useState(0);
+
+  React.useEffect(() => {
+    setImageIndex(0);
+  }, [imageUrls.join("|")]);
+
+  const currentImage = imageUrls[imageIndex] || "";
+
+  return (
+    <div className="h-14 w-14 shrink-0 overflow-hidden rounded-full bg-gray-200">
+      {currentImage ? (
+        <img
+          src={currentImage}
+          alt={name}
+          className="h-full w-full object-cover"
+          loading="lazy"
+          decoding="async"
+          referrerPolicy="no-referrer"
+          onError={() => {
+            setImageIndex((prev) => prev + 1);
+          }}
+        />
+      ) : (
+        <div className="grid h-full w-full place-items-center text-lg font-semibold text-gray-700">
+          {name.slice(0, 1).toUpperCase()}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+const INVITE_LOADING_ANIMALS = ["🦊", "🐼", "🦉", "🐰", "🐶", "🐯"];
+const INVITE_LOADING_BACKGROUNDS = ["🎥", "🤝", "📊", "🎯", "✨", "🔎"];
+
+function InviteCreatorLoadingAnimation() {
+  const messages = React.useMemo(
+    () => [
+      "Hold on, we are searching the right YouTube creators.",
+      "Our AI scout is checking creator activity and fit.",
+      "Matching campaign category, country, and influencer tier.",
+      "Reviewing audience authenticity and brand-safety signals.",
+      "Filtering weak matches so your shortlist stays clean.",
+      "Almost ready — preparing creators you can invite.",
+    ],
+    []
+  );
+
+  const [frameIndex, setFrameIndex] = React.useState(0);
+  const [messageIndex, setMessageIndex] = React.useState(0);
+
+  React.useEffect(() => {
+    const timer = window.setInterval(() => {
+      setFrameIndex((current) =>
+        (current + 1) % Math.max(INVITE_LOADING_ANIMALS.length, INVITE_LOADING_BACKGROUNDS.length)
+      );
+    }, 1050);
+
+    return () => window.clearInterval(timer);
+  }, []);
+
+  React.useEffect(() => {
+    const timer = window.setInterval(() => {
+      setMessageIndex((current) => (current + 1) % messages.length);
+    }, 2300);
+
+    return () => window.clearInterval(timer);
+  }, [messages.length]);
+
+  const activeAnimal = INVITE_LOADING_ANIMALS[frameIndex % INVITE_LOADING_ANIMALS.length] || "🦊";
+  const activeBackground = INVITE_LOADING_BACKGROUNDS[frameIndex % INVITE_LOADING_BACKGROUNDS.length] || "✨";
+  const activeMessage = messages[messageIndex] || messages[0];
+
+  return (
+    <div className="grid min-h-[360px] place-items-center px-6 py-10 text-center">
+      <style jsx global>{`
+        @keyframes cgInviteAiOrbit {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+
+        @keyframes cgInviteAiPulse {
+          0%, 100% { transform: scale(0.96); opacity: 0.55; }
+          50% { transform: scale(1.08); opacity: 0.85; }
+        }
+
+        @keyframes cgInviteAiFloat {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-10px); }
+        }
+
+        @keyframes cgInviteAiScan {
+          0% { transform: translateX(-82px); opacity: 0; }
+          18%, 82% { opacity: 0.55; }
+          100% { transform: translateX(82px); opacity: 0; }
+        }
+
+        @keyframes cgInviteAiTextFade {
+          0% { opacity: 0; transform: translateY(6px); }
+          18%, 82% { opacity: 1; transform: translateY(0); }
+          100% { opacity: 0; transform: translateY(-6px); }
+        }
+      `}</style>
+
+      <div className="flex max-w-[660px] flex-col items-center justify-center">
+        <div className="relative mb-7 h-[178px] w-[178px]">
+          <div className="absolute inset-0 rounded-full bg-gradient-to-br from-[#fff7d8] via-[#f8f4ea] to-white shadow-[0_20px_60px_rgba(25,20,10,0.10)]" />
+          <div className="absolute inset-[14px] rounded-full border border-[#ead9b5] bg-white/80" style={{ animation: "cgInviteAiPulse 2.2s ease-in-out infinite" }} />
+          <div className="absolute inset-[28px] rounded-full bg-[#fff8e6]" />
+
+          <div className="absolute inset-0" style={{ animation: "cgInviteAiOrbit 5.4s linear infinite" }}>
+            <span className="absolute left-1/2 top-0 h-3 w-3 -translate-x-1/2 rounded-full bg-[#d29b22] shadow-[0_0_16px_rgba(210,155,34,0.45)]" />
+            <span className="absolute bottom-5 left-4 h-2.5 w-2.5 rounded-full bg-[#4f8f5f] shadow-[0_0_16px_rgba(79,143,95,0.35)]" />
+            <span className="absolute bottom-5 right-4 h-2.5 w-2.5 rounded-full bg-[#c06f3d] shadow-[0_0_16px_rgba(192,111,61,0.35)]" />
+          </div>
+
+          <div className="absolute inset-[44px] overflow-hidden rounded-[32px] border border-[#ead7ad] bg-white shadow-[0_16px_35px_rgba(20,15,5,0.10)]" style={{ animation: "cgInviteAiFloat 2.4s ease-in-out infinite" }}>
+            <div className="absolute inset-0 grid place-items-center text-[64px] opacity-[0.12] transition-all duration-500">
+              <span key={activeBackground}>{activeBackground}</span>
+            </div>
+            <div className="absolute inset-0 bg-gradient-to-b from-white/20 via-transparent to-[#fff3c5]/50" />
+            <div className="absolute left-1/2 top-0 h-full w-[2px] bg-[#d39c27]/55 shadow-[0_0_18px_rgba(211,156,39,0.45)]" style={{ animation: "cgInviteAiScan 1.7s ease-in-out infinite" }} />
+            <div className="absolute inset-0 grid place-items-center text-[54px] transition-all duration-500">
+              <span key={activeAnimal}>{activeAnimal}</span>
+            </div>
+          </div>
+        </div>
+
+        <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-[#a98634]">
+          CollabGlam AI discovery
+        </p>
+        <h3 className="mt-3 text-[24px] font-semibold text-gray-950">
+          Finding creators for your campaign
+        </h3>
+        <p
+          key={messageIndex}
+          className="mx-auto mt-3 max-w-[560px] text-[15px] leading-6 text-[#71685c]"
+          style={{ animation: "cgInviteAiTextFade 2.25s ease-in-out both" }}
+        >
+          {activeMessage}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function rowId(c: Creator, index: number) {
+  const modashId = getCreatorModashId(c);
+  const platform = getCreatorPlatform(c);
+  const handle = getCreatorHandle(c);
+
+  if (modashId && platform) return `modash:${platform}:${modashId}`;
+  if (handle && platform) return `handle:${platform}:${handle}`;
+
+  return `${index}`;
+}
+
+function invitationKey(inv: Invitation) {
+  const modashId = String(inv.modashUserId || "").trim();
+  const platform = normalizePlatform(inv.platform);
+  const handle = normalizeHandle(inv.handle);
+
+  if (modashId && platform) return `modash:${platform}:${modashId}`;
+  if (handle && platform) return `handle:${platform}:${handle}`;
+
+  return "";
+}
+
+function creatorKeysForMatching(c: Creator, index: number) {
+  const keys = new Set<string>();
+
+  const modashId = getCreatorModashId(c);
+  const platform = getCreatorPlatform(c);
+  const handle = getCreatorHandle(c);
+
+  if (modashId && platform) keys.add(`modash:${platform}:${modashId}`);
+  if (handle && platform) keys.add(`handle:${platform}:${handle}`);
+
+  keys.add(rowId(c, index));
+
+  return keys;
+}
+
+function isCreatorSelected(
+  selected: Set<string>,
+  creator: Creator,
+  index: number
+) {
+  const keys = creatorKeysForMatching(creator, index);
+
+  for (const key of keys) {
+    if (selected.has(key)) return true;
+  }
+
+  return false;
+}
+
+function isCreatorAlreadyInvited(
+  alreadyInvited: Set<string>,
+  creator: Creator,
+  index: number
+) {
+  const keys = creatorKeysForMatching(creator, index);
+
+  for (const key of keys) {
+    if (alreadyInvited.has(key)) return true;
+  }
+
+  return false;
+}
+
+function isInvitationActive(inv: Invitation) {
+  const status = String(inv.status || "").toLowerCase();
+  return status === "invited";
+}
+
+function buildInvitationEmailTemplate(c: Creator) {
+  const name = getCreatorName(c);
+  const aiScore = getCreatorAiScore(c);
+
+  return {
+    subject: "You’re invited to a CollabGlam campaign",
+    textBody: `Hi ${name},
+
+We found your profile to be a strong match for one of our brand campaigns on CollabGlam.
+
+${aiScore !== null
+        ? `Your campaign match score is ${aiScore}%.`
+        : "Your profile looks like a strong match for this campaign."
+      }
+
+We would love to invite you to collaborate.
+
+Team CollabGlam`,
+    htmlBody: `
+      <p>Hi ${name},</p>
+      <p>We found your profile to be a strong match for one of our brand campaigns on CollabGlam.</p>
+      ${aiScore !== null
+        ? `<p><strong>Your campaign match score is ${aiScore}%.</strong></p>`
+        : `<p><strong>Your profile looks like a strong match for this campaign.</strong></p>`
+      }
+      <p>We would love to invite you to collaborate.</p>
+      <p>Team CollabGlam</p>
+    `,
+  };
+}
+
+function getStoredBrandMongoId() {
   if (typeof window === "undefined") return "";
 
   return (
-    localStorage.getItem("selectedBrandId") ||
-    localStorage.getItem("currentBrandId") ||
-    localStorage.getItem("brandId") ||
-    sessionStorage.getItem("selectedBrandId") ||
-    sessionStorage.getItem("currentBrandId") ||
-    sessionStorage.getItem("brandId") ||
-    getBrandId() ||
+    window.localStorage.getItem("brandId") ||
+    window.localStorage.getItem("currentBrandId") ||
     ""
-  ).trim();
+  );
 }
 
-function resolveTargetBrandId(
-  explicitBrandId?: string | null,
-  fallbackCampaign?: Partial<EnrichedCampaignDoc> | null
-) {
-  const direct = String(explicitBrandId || "").trim();
-  if (direct) return direct;
+function getCreatorAudienceAuthenticity(c: Creator) {
+  const anyCreator = c as any;
+  const candidates = [
+    c.audienceAuthenticity,
+    anyCreator.audienceAuthenticityScore,
+    c.authenticityScore,
+    c.scores?.authenticityScore,
+    anyCreator.scores?.audienceAuthenticityScore,
+    anyCreator.scores?.audienceAuthenticity,
+    c.stats?.authenticityScore,
+    anyCreator.stats?.audienceAuthenticityScore,
+    anyCreator.audience?.authenticityScore,
+    anyCreator.audience?.authenticity,
+  ];
 
-  const fromCampaign = String((fallbackCampaign as any)?.brandId || "").trim();
-  if (fromCampaign) return fromCampaign;
+  for (const value of candidates) {
+    const n = Number(value);
+    if (Number.isFinite(n) && n > 0) {
+      return Math.max(0, Math.min(100, Math.round(n)));
+    }
+  }
 
-  return getStoredBrandId();
+  const followers = Number(c.followers || c.subscribers || 0);
+  const avgViews = Number(c.avgViews || c.stats?.averageViews || 0);
+  const engagementRate = Number(c.engagementRate || c.stats?.engagementRate || 0);
+
+  if (!followers && !avgViews && !engagementRate) return null;
+
+  let score = 78;
+  if (engagementRate >= 5) score += 8;
+  else if (engagementRate >= 2) score += 5;
+  else if (engagementRate > 0 && engagementRate < 0.5) score -= 12;
+
+  const viewSubscriberRatio = followers > 0 ? (avgViews / followers) * 100 : 0;
+  if (viewSubscriberRatio >= 10) score += 7;
+  else if (viewSubscriberRatio >= 3) score += 4;
+  else if (viewSubscriberRatio > 0 && viewSubscriberRatio < 0.3) score -= 8;
+
+  return Math.max(35, Math.min(95, Math.round(score)));
 }
 
-/* ============================================================================
-   Payload builders
-============================================================================ */
+function getAudienceAuthenticityColorClass(value: number | null) {
+  if (value === null) return "text-[#202124]";
+  if (value >= 75) return "text-[#16803a]";
+  if (value >= 35) return "text-[#b7791f]";
+  return "text-[#dc2626]";
+}
 
-function buildCreateManualPayload(
-  brandId: string,
-  form: ManualForm,
-  includeFiles: boolean
-) {
-  const actorPayload = getOptionalAdminPayload();
+function buildCreatorMediaKitHref(c: Creator, campaignId?: string | null) {
+  const channelId = getCreatorChannelId(c);
+  if (!channelId) return "";
 
-  const base: ActorAwareCreatePayload = {
-    brandId,
-    ...actorPayload,
+  const params = new URLSearchParams({
+    channelId,
+    returnTo: "invitation",
+  });
 
-    campaignTitle: form.title.trim(),
-    description: form.description.trim(),
-    campaignType: form.campaignType,
+  if (campaignId) {
+    params.set("campaignId", campaignId);
+  }
 
-    categoryId: form.categoryId,
-    subcategoryIds: form.subcategories,
+  const category = Array.isArray(c.categories) ? c.categories[0] : c.category;
+  const country = c.location?.country || c.country || c.estimatedAudienceCountry || "";
 
-    productLink: form.productLink.trim(),
-    productImages: [],
+  if (category) params.set("category", String(category));
+  if (country) params.set("country", String(country));
 
-    campaignGoals: form.goals,
-    influencerTierIds: form.influencerTier,
-    contentFormats: form.contentFormats,
-    contentLanguageIds: form.contentLanguage,
+  params.set("platform", "youtube");
 
-    targetCountryIds: form.targetCountry,
-    targetAgeRanges: form.targetAgeGroups,
-    preferredHashtags: form.hashtags,
+  return `/brand/browse-influencer/detail-panel?${params.toString()}`;
+}
 
-    numberOfInfluencers: Number(form.numberOfInfluencers || 0),
-    ...(Number(form.maxFollowers) > 0
-      ? { maxFollowers: Number(form.maxFollowers) }
-      : {}),
-    ...(Number(form.minFollowers) > 0
-      ? { minFollowers: Number(form.minFollowers) }
-      : {}),
+function AiScoreSparkleIcon() {
+  const gradientId = React.useId().replace(/:/g, "");
 
-    campaignBudget: Number(form.campaignBudget || 0),
-    paymentType: form.paymentType,
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="12"
+      height="12"
+      viewBox="0 0 13 13"
+      fill="none"
+      className="shrink-0"
+      aria-hidden="true"
+    >
+      <path
+        d="M10.5022 7.4375C10.5033 7.61588 10.4491 7.79022 10.3471 7.93654C10.245 8.08285 10.1002 8.19394 9.93238 8.25453L7.1116 9.29688L6.07254 12.1198C6.011 12.287 5.89968 12.4313 5.75358 12.5332C5.60748 12.6351 5.43363 12.6897 5.2555 12.6897C5.07738 12.6897 4.90353 12.6351 4.75743 12.5332C4.61133 12.4313 4.50001 12.287 4.43847 12.1198L3.39285 9.29688L0.569879 8.25781C0.402716 8.19628 0.258449 8.08495 0.156544 7.93885C0.0546386 7.79275 0 7.61891 0 7.44078C0 7.26265 0.0546386 7.08881 0.156544 6.94271C0.258449 6.79661 0.402716 6.68528 0.569879 6.62375L3.39285 5.57812L4.43191 2.75516C4.49344 2.58799 4.60477 2.44373 4.75087 2.34182C4.89697 2.23992 5.07081 2.18528 5.24894 2.18528C5.42707 2.18528 5.60091 2.23992 5.74701 2.34182C5.89311 2.44373 6.00444 2.58799 6.06597 2.75516L7.1116 5.57812L9.93457 6.61719C10.1025 6.67832 10.2473 6.79007 10.3489 6.93701C10.4506 7.08395 10.5042 7.25882 10.5022 7.4375ZM7.43972 2.1875H8.31472V3.0625C8.31472 3.17853 8.36082 3.28981 8.44286 3.37186C8.52491 3.45391 8.63619 3.5 8.75222 3.5C8.86826 3.5 8.97954 3.45391 9.06158 3.37186C9.14363 3.28981 9.18972 3.17853 9.18972 3.0625V2.1875H10.0647C10.1808 2.1875 10.292 2.14141 10.3741 2.05936C10.4561 1.97731 10.5022 1.86603 10.5022 1.75C10.5022 1.63397 10.4561 1.52269 10.3741 1.44064C10.292 1.35859 10.1808 1.3125 10.0647 1.3125H9.18972V0.4375C9.18972 0.321468 9.14363 0.210188 9.06158 0.128141C8.97954 0.0460936 8.86826 0 8.75222 0C8.63619 0 8.52491 0.0460936 8.44286 0.128141C8.36082 0.210188 8.31472 0.321468 8.31472 0.4375V1.3125H7.43972C7.32369 1.3125 7.21241 1.35859 7.13036 1.44064C7.04832 1.52269 7.00222 1.63397 7.00222 1.75C7.00222 1.86603 7.04832 1.97731 7.13036 2.05936C7.21241 2.14141 7.32369 2.1875 7.43972 2.1875ZM12.2522 3.9375H11.8147V3.5C11.8147 3.38397 11.7686 3.27269 11.6866 3.19064C11.6045 3.10859 11.4933 3.0625 11.3772 3.0625C11.2612 3.0625 11.1499 3.10859 11.0679 3.19064C10.9858 3.27269 10.9397 3.38397 10.9397 3.5V3.9375H10.5022C10.3862 3.9375 10.2749 3.98359 10.1929 4.06564C10.1108 4.14769 10.0647 4.25897 10.0647 4.375C10.0647 4.49103 10.1108 4.60231 10.1929 4.68436C10.2749 4.76641 10.3862 4.8125 10.5022 4.8125H10.9397V5.25C10.9397 5.36603 10.9858 5.47731 11.0679 5.55936C11.1499 5.64141 11.2612 5.6875 11.3772 5.6875C11.4933 5.6875 11.6045 5.64141 11.6866 5.55936C11.7686 5.47731 11.8147 5.36603 11.8147 5.25V4.8125H12.2522C12.3683 4.8125 12.4795 4.76641 12.5616 4.68436C12.6436 4.60231 12.6897 4.49103 12.6897 4.375C12.6897 4.25897 12.6436 4.14769 12.5616 4.06564C12.4795 3.98359 12.3683 3.9375 12.2522 3.9375Z"
+        fill={`url(#${gradientId})`}
+      />
+      <defs>
+        <linearGradient
+          id={gradientId}
+          x1="-0.765759"
+          y1="-1.05748"
+          x2="13.2693"
+          y2="6.12811"
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop stopColor="white" />
+          <stop offset="0.129808" stopColor="#FAFAFA" />
+          <stop offset="0.379808" stopColor="#FFBF00" stopOpacity="0.83" />
+          <stop offset="0.51676" stopColor="#F6BB2A" />
+          <stop offset="0.810379" stopColor="#F3584E" />
+          <stop offset="1" stopColor="#E078D1" />
+        </linearGradient>
+      </defs>
+    </svg>
+  );
+}
 
-    additionalNotes: form.additionalNotes || undefined,
+function normalizeReportPlatform(
+  platform?: string | null
+): "instagram" | "tiktok" | "youtube" {
+  const p = normalizePlatform(platform);
 
-    startAt: form.startDate || undefined,
-    endAt: form.endDate || undefined,
+  if (p === "instagram" || p === "tiktok" || p === "youtube") {
+    return p;
+  }
+
+  return "instagram";
+}
+
+function getCreatorReportHandle(creator?: Creator | null) {
+  if (!creator) return null;
+
+  const handle = getCreatorHandle(creator);
+  if (handle) return handle;
+
+  const username = String(creator.username || creator.handle || "")
+    .replace(/^@/, "")
+    .trim();
+
+  return username ? `@${username}` : null;
+}
+
+function getReportLastFetchedAt(data?: ModashReportResponse | null) {
+  const value =
+    data?._lastFetchedAt ||
+    data?.lastFetchedAt ||
+    data?.updatedAt ||
+    data?.createdAt ||
+    null;
+
+  return value ? String(value) : null;
+}
+
+function buildDetailPanelRawFromInvitationCreator(
+  creator?: Creator | null
+): ModashReportResponse | null {
+  if (!creator) return null;
+
+  const isYoutube = isYouTubeCreator(creator);
+  const platform = isYoutube ? "youtube" : getCreatorPlatform(creator);
+  const channelId = getCreatorChannelId(creator);
+  const modashId = getCreatorModashId(creator);
+  const userId = channelId || modashId;
+  const name = getCreatorName(creator);
+  const handle =
+    getCreatorReportHandle(creator) ||
+    (channelId ? channelId : creator.username || creator.handle || null);
+  const username = String(handle || userId || name || "")
+    .replace(/^@/, "")
+    .trim();
+  const followers = getCreatorFollowers(creator);
+  const avgViews = numOrUndefined(
+    creator.avgViews || creator.stats?.averageViews || (creator as any)?.averageViews
+  );
+  const engagementRate = numOrUndefined(
+    creator.engagementRate || creator.stats?.engagementRate
+  );
+  const country = getCreatorCountryLabel(creator);
+  const picture = getCreatorPicture(creator);
+  const bio = getCreatorBio(creator);
+  const authenticity = getCreatorAudienceAuthenticity(creator);
+  const postsCount = numOrUndefined(
+    (creator as any).totalVideos || (creator as any).totalVideoCount || (creator as any).postsCount
+  );
+  const recentVideos = Array.isArray((creator as any).recentVideoTitles)
+    ? (creator as any).recentVideoTitles
+    : Array.isArray((creator as any).recentVideos)
+      ? (creator as any).recentVideos
+      : [];
+  const recentPosts = recentVideos.map((video: any) => ({
+    id: video?.videoId || video?.id,
+    videoId: video?.videoId || video?.id,
+    title: video?.title,
+    text: video?.description || video?.title,
+    caption: video?.description || video?.title,
+    description: video?.description || "",
+    image: video?.thumbnail || video?.image,
+    thumbnail: video?.thumbnail || video?.image,
+    url: video?.url || video?.videoUrl,
+    views: numOrUndefined(video?.views || video?.viewCount),
+    likes: numOrUndefined(video?.likes || video?.likeCount),
+    comments: numOrUndefined(video?.comments || video?.commentCount),
+    createdAt: video?.publishedAt || video?.createdAt,
+    publishedAt: video?.publishedAt || video?.createdAt,
+    date: video?.publishedAt || video?.createdAt,
+    type: "YouTube video",
+  }));
+
+  const profile = {
+    userId,
+    channelId,
+    youtubeChannelId: channelId,
+    modashId: userId,
+    username,
+    handle,
+    fullname: name,
+    name,
+    url: creator.channelUrl || creator.url || creator.urls?.url ||
+      (channelId ? `https://www.youtube.com/channel/${channelId}` : null),
+    picture,
+    followers,
+    subscribers: followers,
+    avgViews,
+    averageViews: avgViews,
+    engagementRate,
+    bio,
+    description: bio,
+    country: country === "—" ? null : country,
+    provider: platform,
+    postsCount,
+    postsCounts: postsCount,
+    categories: creator.category ? [{ name: creator.category, categoryName: creator.category }] : [],
+    recentPosts,
+    popularPosts: recentPosts,
+    stats: {
+      followers: { value: followers },
+      avgViews: { value: avgViews },
+      averageViews: avgViews,
+      engagementRate,
+    },
+    audience: {
+      geoCountries: country && country !== "—" ? [{ name: country, weight: 1 }] : [],
+      ages: [],
+      genders: [],
+      languages: [],
+      interests: Array.isArray(creator.categories)
+        ? creator.categories.map((item) => ({ name: item, weight: 1 }))
+        : creator.category
+          ? [{ name: creator.category, weight: 1 }]
+          : [],
+      credibility: authenticity ? authenticity / 100 : null,
+    },
   };
 
-  if (!includeFiles) return base;
-
-  return (async () => {
-    const productImages = await filesToDataUrls(form.productFiles ?? []);
-    return { ...base, productImages } as ActorAwareCreatePayload;
-  })();
+  return {
+    _source: isYoutube ? "youtube_api" : "modash_ai",
+    _lastFetchedAt: new Date().toISOString(),
+    provider: platform,
+    platform,
+    userId,
+    channelId,
+    youtubeChannelId: channelId,
+    modashId: userId,
+    username,
+    handle,
+    fullname: name,
+    name,
+    url: profile.url,
+    picture,
+    bio,
+    description: bio,
+    country: country === "—" ? null : country,
+    followers,
+    subscribers: followers,
+    avgViews,
+    averageViews: avgViews,
+    engagementRate,
+    postsCount,
+    postsCounts: postsCount,
+    recentPosts,
+    popularPosts: recentPosts,
+    sponsoredPosts: [],
+    profile,
+    stats: profile.stats,
+    audience: profile.audience,
+    categories: profile.categories,
+    hashtags: [],
+    lookalikes: [],
+    statHistory: [],
+  } as ModashReportResponse;
 }
 
-function buildEditDraftPayload(
-  brandId: string,
-  campaignId: string,
-  form: ManualForm,
-  status: CampaignStatus
-): ActorAwareEditPayload {
-  const actorPayload = getOptionalAdminPayload();
-
-  return compact({
-    brandId,
-    campaignId,
-    status,
-    ...actorPayload,
-
-    campaignTitle: form.title.trim(),
-    description: form.description.trim(),
-    campaignType: form.campaignType,
-
-    categoryId: form.categoryId,
-    subcategoryIds: form.subcategories,
-
-    productLink: form.productLink.trim(),
-
-    campaignGoals: form.goals,
-    influencerTierIds: form.influencerTier,
-    contentFormats: form.contentFormats,
-    contentLanguageIds: form.contentLanguage,
-
-
-    targetCountryIds: form.targetCountry,
-    targetAgeRanges: form.targetAgeGroups,
-    preferredHashtags: form.hashtags,
-
-    numberOfInfluencers: Number(form.numberOfInfluencers || 0),
-    ...(Number(form.minFollowers) > 0
-      ? { minFollowers: Number(form.minFollowers) }
-      : {}),
-    ...(Number(form.maxFollowers) > 0
-      ? { maxFollowers: Number(form.maxFollowers) }
-      : {}),
-
-    campaignBudget: Number(form.campaignBudget || 0),
-    paymentType: form.paymentType,
-
-    additionalNotes: form.additionalNotes || undefined,
-
-    startAt: form.startDate || undefined,
-    endAt: form.endDate || undefined,
-  }) as ActorAwareEditPayload;
-}
-
-/* ============================================================================
-   Validation
-============================================================================ */
-
-function validateManualForm(args: {
-  form: ManualForm;
-  dateOk: boolean;
-  blockingFileErrors: string[];
-  isEditMode?: boolean;
-}) {
-  const { form, dateOk, blockingFileErrors, isEditMode = false } = args;
-  const e: Record<string, string> = {};
-
-  if (!form.title.trim()) e.title = "Campaign title is required.";
-
-  if (!form.description.trim()) {
-    e.description = "Description is required.";
-  } else if (form.description.trim().length < 50) {
-    e.description = "Description must be at least 50 characters.";
-  }
-
-  if (!form.campaignType.trim()) {
-    e.campaignType = "Campaign type is required.";
-  }
-
-  if (!form.categoryId.trim()) e.categoryId = "Campaign category is required.";
-
-  if (!form.subcategories?.length) e.subcategories = "Select at least 1 subcategory.";
-  if (!form.goals?.length) e.goals = "Select at least 1 campaign goal.";
-  if (!form.platforms?.length) e.platforms = "Select at least 1 platform.";
-  if (!form.targetCountry?.length) e.targetCountry = "Select at least 1 country.";
-  if (!form.targetAgeGroups?.length) e.targetAgeGroups = "Select at least 1 age group.";
-
-  if (!isEditMode && !form.productFiles?.length) {
-    e.productFiles = "Upload at least 1 product image/file.";
-  }
-
-  if (blockingFileErrors?.length) e.productFiles = blockingFileErrors[0];
-
-  if (!form.paymentType.trim()) e.paymentType = "Payment type is required.";
-
-  if (!Number(form.campaignBudget) || Number(form.campaignBudget) <= 0) {
-    e.campaignBudget = "Campaign budget is required.";
-  }
-
-  if (!form.startDate) e.startDate = "Start date is required.";
-  if (!form.endDate) e.endDate = "End date is required.";
-
-  if (form.startDate && form.endDate && !dateOk) {
-    e.endDate = "End Date must be after Start Date.";
-  }
-
-  if (Number(form.minFollowers) < 0) {
-    e.minFollowers = "Min followers can't be negative.";
-  }
-
-  if (Number(form.maxFollowers) < 0) {
-    e.maxFollowers = "Max followers can't be negative.";
-  }
-
-  if (
-    Number(form.minFollowers) > 0 &&
-    Number(form.maxFollowers) > 0 &&
-    Number(form.minFollowers) > Number(form.maxFollowers)
-  ) {
-    e.maxFollowers = "Max followers must be greater than or equal to Min followers.";
-  }
-
-  if (!Number(form.numberOfInfluencers) || Number(form.numberOfInfluencers) <= 0) {
-    e.numberOfInfluencers = "Number of influencers is required.";
-  }
-
-  if (!form.influencerTier?.length) {
-    e.influencerTier = "Select at least 1 influencer tier.";
-  }
-
-  if (!form.contentFormats?.length) {
-    e.contentFormats = "Select at least 1 content format.";
-  }
-
-  return e;
-}
-
-/* ============================================================================
-   Accordion + Chips
-============================================================================ */
-
-function AccordionCard({
-  title,
-  subtitle,
-  children,
-  defaultOpen = false,
+function ModashReportSideModal({
+  drawer,
+  onClose,
+  onRefresh,
+  onChangeCalc,
+  campaignId,
 }: {
-  title: string;
-  subtitle?: string;
-  children: React.ReactNode;
-  defaultOpen?: boolean;
+  drawer: ReportDrawerState;
+  onClose: () => void;
+  onRefresh: () => void;
+  onChangeCalc: (calc: ReportCalculationMethod) => void;
+  campaignId?: string | null;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
+  const creator = drawer.creator;
+  const youtubeChannelId = creator && isYouTubeCreator(creator) ? getCreatorChannelId(creator) : null;
+  const fallbackRaw = drawer.raw || drawer.data || buildDetailPanelRawFromInvitationCreator(creator);
+  const platform = normalizeReportPlatform(
+    getCreatorPlatform(creator || {}) || fallbackRaw?.provider
+  );
+  const handle = getCreatorReportHandle(creator) || youtubeChannelId || null;
 
   return (
-    <div className={cn("cg-accordion", open ? "cg-accordion--open" : "cg-accordion--closed")}>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        className="cg-accordion-btn"
-      >
-        <div className="min-w-0 flex-1">
-          <div className="cg-accordion-title">{title}</div>
-          {subtitle ? <div className="cg-accordion-subtitle">{subtitle}</div> : null}
-        </div>
-
-        <span className="mt-[6px] shrink-0 text-neutral-900">
-          {open ? <CaretUp size={20} /> : <CaretDown size={20} />}
-        </span>
-      </button>
-
-      {open ? <div className="p-3 pt-0">{children}</div> : null}
-    </div>
+    <DetailPanel
+      open={drawer.open}
+      onClose={onClose}
+      loading={drawer.loading}
+      error={drawer.error}
+      data={(drawer.data as any) || null}
+      raw={fallbackRaw}
+      platform={platform as any}
+      emailExists={null}
+      onChangeCalc={onChangeCalc}
+      brandId={getStoredBrandMongoId()}
+      campaignId={campaignId}
+      handle={handle}
+      youtubeChannelId={youtubeChannelId}
+      lastFetchedAt={drawer.lastFetchedAt}
+      onRefreshReport={onRefresh}
+      connectedProfiles={[]}
+    />
   );
 }
 
-function ChipMultiSelect({
-  options,
-  value,
-  onChange,
-}: {
-  options: Array<string | Option>;
-  value: string[];
-  onChange: (next: string[]) => void;
-}) {
-  const normalized: Option[] = useMemo(() => {
-    const out: Option[] = (options ?? [])
-      .map((o) => (typeof o === "string" ? { label: o, value: o } : o))
-      .filter((o) => !!String(o?.value ?? "").trim() && !!String(o?.label ?? "").trim());
+export default function InfluencerInvitationPage() {
+  const [mounted, setMounted] = React.useState(false);
+  const [showConfetti, setShowConfetti] = React.useState(false);
 
-    const seen = new Set<string>();
-
-    return out.filter((o) => {
-      if (seen.has(o.value)) return false;
-      seen.add(o.value);
-      return true;
+  const [creators, setCreators] = React.useState<Creator[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+  const [recommendationProgress, setRecommendationProgress] =
+    React.useState<RecommendationProgressState>({
+      active: false,
+      done: false,
+      count: 0,
+      target: INVITATION_CREATOR_LIMIT,
+      keywords: [],
     });
-  }, [options]);
+  const recommendationPollRef = React.useRef<{ cancelled: boolean } | null>(null);
+  const autoSelectedCreatorKeysRef = React.useRef<Set<string>>(new Set());
+  const creatorsRef = React.useRef<Creator[]>([]);
 
-  const toggle = useCallback(
-    (id: string) => {
-      if (value.includes(id)) onChange(value.filter((x) => x !== id));
-      else onChange([...value, id]);
-    },
-    [value, onChange]
+  const [selected, setSelected] = React.useState<Set<string>>(new Set());
+  const [alreadyInvited, setAlreadyInvited] = React.useState<Set<string>>(
+    new Set()
   );
+  const [sending, setSending] = React.useState<Set<string>>(new Set());
+  const [bulkCreating, setBulkCreating] = React.useState(false);
 
-  return (
-    <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap gap-2">
-        {normalized.map((opt) => {
-          const active = value.includes(opt.value);
+  const [reportCalculationMethod, setReportCalculationMethod] =
+    React.useState<ReportCalculationMethod>("average");
 
-          return (
-            <button
-              key={opt.value}
-              type="button"
-              onClick={() => toggle(opt.value)}
-              className={cn("cg-chip", active && "cg-chip--active")}
-            >
-              <span className={cn("cg-chip-text", active && "cg-chip-text--active")}>
-                {opt.label}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
+  const [reportDrawer, setReportDrawer] = React.useState<ReportDrawerState>({
+    open: false,
+    creator: null,
+    loading: false,
+    error: null,
+    data: null,
+    raw: null,
+    lastFetchedAt: null,
+    calculationMethod: "average",
+  });
 
-/* ============================================================================
-   Manual Screen
-============================================================================ */
-
-function CreateManualScreen({
-  sidebarOffsetPx,
-  formMaxWidth = 760,
-  bottomBarMaxWidth,
-  lists,
-  initialFromCampaign,
-  targetBrandId,
-  isEditMode = false,
-  onAfterPublish,
-}: {
-  sidebarOffsetPx: number;
-  formMaxWidth?: number;
-  bottomBarMaxWidth?: number;
-  lists: ReturnType<typeof useCampaignLists>;
-  initialFromCampaign?: EnrichedCampaignDoc | null;
-  targetBrandId?: string;
-  isEditMode?: boolean;
-  onAfterPublish?: () => void;
-}) {
   const router = useRouter();
-  const [form, setForm] = useState<ManualForm>(EMPTY_MANUAL);
-
-  const [productFileErrors, setProductFileErrors] = useState<string[]>([]);
-  const followersTouchedRef = useRef({ min: false, max: false });
-
-  const [existingProductImages, setExistingProductImages] = useState<
-    ExistingProductImage[]
-  >([]);
-
-  const [campaignId, setCampaignId] = useState<string>("");
-  const [publishing, setPublishing] = useState(false);
-
-  const [draftSaving, setDraftSaving] = useState(false);
-  const [draftJustSaved, setDraftJustSaved] = useState(false);
-  const draftSavedTimerRef = useRef<number | null>(null);
-
-  const categoryPicker = useCategoryPicker({ debounceMs: 250, enabled: true });
-  const [loadedDetails, setLoadedDetails] = useState<any>(null);
-  const loadedInitialRef = useRef<EnrichedCampaignDoc | null>(null);
-
-  const [serverFieldErrors, setServerFieldErrors] = useState<Record<string, string>>({});
-  const [submitAttempted, setSubmitAttempted] = useState(false);
-
-  const showValidationSummaryToast = useCallback((errors: Record<string, string>) => {
-    const firstError = Object.values(errors).find(Boolean);
-
-    toastError(
-      "Please fix the highlighted fields",
-      firstError || "Some required campaign details are missing or invalid."
-    );
-  }, []);
-
-  const resolvedBrandId = useMemo(
-    () => resolveTargetBrandId(targetBrandId, initialFromCampaign || null),
-    [targetBrandId, initialFromCampaign]
-  );
-
-  const setField = useCallback(<K extends keyof ManualForm>(key: K, value: ManualForm[K]) => {
-    setForm((p) => ({ ...p, [key]: value }));
-
-    setServerFieldErrors((prev) => {
-      if (!prev[key as string]) return prev;
-
-      const next = { ...prev };
-      delete next[key as string];
-      return next;
-    });
-  }, []);
-
-  const extractBackendMessage = useCallback((e: any) => {
-    return getBackendErrorMessage(e, "Failed to publish campaign.");
-  }, []);
-
-  const extractBackendSuccessMessage = useCallback((res: any, fallback: string) => {
-    const d = res?.data ?? res;
-
-    if (typeof d === "string") return d;
-    if (typeof d?.message === "string" && d.message.trim()) return d.message;
-    if (typeof d?.successMessage === "string" && d.successMessage.trim()) {
-      return d.successMessage;
-    }
-    if (typeof d?.detail === "string" && d.detail.trim()) return d.detail;
-    if (typeof d?.msg === "string" && d.msg.trim()) return d.msg;
-
-    return fallback;
-  }, []);
-
-  const extractBackendFieldErrors = useCallback((e: any) => {
-    const d = e?.response?.data ?? e?.data ?? e;
-
-    const fe = d?.fieldErrors || d?.errorsByField || d?.validationErrors;
-    if (fe && typeof fe === "object" && !Array.isArray(fe)) {
-      return fe as Record<string, string>;
-    }
-
-    const arr = d?.errors;
-    if (Array.isArray(arr)) {
-      const out: Record<string, string> = {};
-
-      for (const it of arr) {
-        const k = String(it?.param ?? it?.field ?? it?.path ?? "").trim();
-        const m = String(it?.msg ?? it?.message ?? "").trim();
-
-        if (k && m && !out[k]) out[k] = m;
-      }
-
-      return out;
-    }
-
-    const issues = d?.issues;
-    if (Array.isArray(issues)) {
-      const out: Record<string, string> = {};
-
-      for (const it of issues) {
-        const path = Array.isArray(it?.path)
-          ? String(it.path[0] ?? "")
-          : String(it?.path ?? "");
-        const m = String(it?.message ?? "").trim();
-        const k = String(path).trim();
-
-        if (k && m && !out[k]) out[k] = m;
-      }
-
-      return out;
-    }
-
-    return null;
-  }, []);
-
-  const normalizeExistingProductImages = useCallback((images: any[] = []) => {
-    return images
-      .map((img: any) => {
-        if (typeof img === "string") {
-          return {
-            dataUrl: img,
-            name: img.split("/").pop() || "Campaign image",
-            type: "image/jpeg",
-            contentType: "image/jpeg",
-          };
-        }
-
-        const url = img?.dataUrl || img?.url || "";
-        if (!url) return null;
-
-        return {
-          dataUrl: url,
-          url,
-          name: img?.name || url.split("/").pop() || "Campaign image",
-          type: img?.type || img?.contentType || "image/jpeg",
-          contentType: img?.contentType || img?.type || "image/jpeg",
-          originalSize: img?.originalSize || img?.size || 0,
-          size: img?.size || img?.originalSize || 0,
-          key: img?.key || url.split("/").pop() || "",
-        };
-      })
-      .filter(Boolean) as ExistingProductImage[];
-  }, []);
-
-  const loadCampaignIntoForm = useCallback(
-    (doc: any) => {
-      const normalizePaymentType = (v: any) => {
-        const s = String(v ?? "").trim().toLowerCase();
-
-        if (s === "milestone") return "Milestone";
-        if (s === "fixed") return "Fixed";
-        if (s === "gifting") return "Gifting";
-
-        return "Milestone";
-      };
-
-      try {
-        const id = pickCampaignId(doc);
-        if (id) setCampaignId(id);
-
-        const details = doc?.details ?? null;
-        setLoadedDetails(details);
-
-        setExistingProductImages(
-          normalizeExistingProductImages(doc?.productImages || doc?.images || [])
-        );
-
-        const nextCategoryId = String(
-          doc?.categoryId ?? details?.category?.id ?? ""
-        ).trim();
-
-        const categoryFromPicker = categoryPicker.categoryOptions.find(
-          (o) => o.value === nextCategoryId
-        );
-
-        const nextCategoryName = String(
-          doc?.categoryName ??
-            doc?.category?.name ??
-            details?.category?.name ??
-            categoryFromPicker?.label ??
-            ""
-        ).trim();
-
-        const next: ManualForm = {
-          ...EMPTY_MANUAL,
-          title: String(doc?.campaignTitle ?? doc?.title ?? "").trim(),
-          description: String(doc?.description ?? "").trim(),
-          campaignType: String(doc?.campaignType ?? "").trim(),
-          categoryId: nextCategoryId,
-          categoryName: nextCategoryName,
-          subcategories: idsOf(
-            doc?.subcategoryIds ?? details?.subcategories ?? doc?.subcategories
-          ),
-          productLink: String(doc?.productLink ?? "").trim(),
-          productFiles: [],
-          goals: idsOf(doc?.campaignGoals ?? details?.campaignGoals ?? doc?.goals),
-          numberOfInfluencers: Number(doc?.numberOfInfluencers ?? 0),
-          influencerTier: idsOf(doc?.influencerTierIds ?? details?.influencerTiers),
-          minFollowers: Number(doc?.minFollowers ?? 0),
-          maxFollowers: Number(doc?.maxFollowers ?? 0),
-          contentFormats: idsOf(doc?.contentFormats ?? details?.contentFormats),
-          contentLanguage: idsOf(doc?.contentLanguageIds ?? details?.contentLanguages),
-          paymentType: normalizePaymentType(doc?.paymentType ?? "Milestone"),
-          campaignBudget: Number(doc?.campaignBudget ?? 0),
-          startDate: safeDateInput(doc?.startAt ?? doc?.startDate),
-          endDate: safeDateInput(doc?.endAt ?? doc?.endDate),
-          platforms: (Array.isArray(doc?.platformSelection)
-            ? doc.platformSelection
-            : []
-          )
-            .map(platformToUi)
-            .filter(Boolean),
-          targetCountry: idsOf(doc?.targetCountryIds ?? details?.targetCountries),
-          targetAgeGroups: idsOf(doc?.targetAgeRanges ?? details?.targetAgeRanges),
-          additionalNotes: String(doc?.additionalNotes ?? ""),
-          attachment: null,
-          hashtags: idsOf(doc?.preferredHashtags ?? doc?.hashtags),
-        };
-
-        setForm(next);
-
-        if (nextCategoryId) {
-          categoryPicker.hydrateSelectedCategory({
-            id: nextCategoryId,
-            name: nextCategoryName || "Selected category",
-          });
-        }
-
-        setServerFieldErrors({});
-      } catch (error) {
-        toastError(
-          "Failed to prepare campaign form",
-          getBackendErrorMessage(error, "Campaign details could not be loaded into the form.")
-        );
-      }
-    },
-    [categoryPicker, normalizeExistingProductImages]
-  );
-
-  useEffect(() => {
-    if (!initialFromCampaign) return;
-    if (loadedInitialRef.current === initialFromCampaign) return;
-
-    loadedInitialRef.current = initialFromCampaign;
-    loadCampaignIntoForm(initialFromCampaign);
-  }, [initialFromCampaign, loadCampaignIntoForm]);
-
-  const seededHashtagOptions = useMemo<Option[]>(
-    () =>
-      (loadedDetails?.preferredHashtags ?? [])
-        .map((h: any) => ({
-          label: String(h?.tag ?? "").trim(),
-          value: String(h?.id ?? "").trim(),
-        }))
-        .filter((x: any) => x.label && x.value),
-    [loadedDetails]
-  );
-
-  const hashtagOptions = useMemo(
-    () => mergeOptions(lists.preferredHashtags, seededHashtagOptions),
-    [lists.preferredHashtags, seededHashtagOptions]
-  );
-
-  const seededGoalOptions = useMemo<Option[]>(
-    () =>
-      (loadedDetails?.campaignGoals ?? [])
-        .map((g: any) => ({
-          label: String(g?.goal ?? "").trim(),
-          value: String(g?.id ?? "").trim(),
-        }))
-        .filter((x: any) => x.label && x.value),
-    [loadedDetails]
-  );
-
-  const seededTierOptions = useMemo<Option[]>(
-    () =>
-      (loadedDetails?.influencerTiers ?? [])
-        .map((t: any) => {
-          const category = String(t?.category ?? "").trim();
-          const range = prettyTierValue(t?.value);
-          const label = category && range ? `${category} (${range})` : category || range;
-
-          return {
-            label,
-            value: String(t?.id ?? "").trim(),
-          };
-        })
-        .filter((x: any) => x.label && x.value),
-    [loadedDetails]
-  );
-
-  const seededCategoryOption = useMemo<Option[]>(() => {
-    const id = String(form.categoryId || loadedDetails?.category?.id || "").trim();
-    const fromPicker = categoryPicker.categoryOptions.find((o) => o.value === id);
-
-    const label = String(
-      form.categoryName || loadedDetails?.category?.name || fromPicker?.label || ""
-    ).trim();
-
-    if (!id || !label) return [];
-
-    return [{ value: id, label }];
-  }, [
-    form.categoryId,
-    form.categoryName,
-    loadedDetails,
-    categoryPicker.categoryOptions,
-  ]);
-
-  const categoryOptionsMerged = useMemo(
-    () => mergeOptions(categoryPicker.categoryOptions, seededCategoryOption),
-    [categoryPicker.categoryOptions, seededCategoryOption]
-  );
-
-  const seededFormatOptions = useMemo<Option[]>(
-    () =>
-      (loadedDetails?.contentFormats ?? [])
-        .map((f: any) => ({
-          label: String(f?.format ?? "").trim(),
-          value: String(f?.id ?? "").trim(),
-        }))
-        .filter((x: any) => x.label && x.value),
-    [loadedDetails]
-  );
-
-  const seededLangOptions = useMemo<Option[]>(
-    () =>
-      (loadedDetails?.contentLanguages ?? [])
-        .map((l: any) => ({
-          label: String(l?.name ?? "").trim(),
-          value: String(l?.id ?? "").trim(),
-        }))
-        .filter((x: any) => x.label && x.value),
-    [loadedDetails]
-  );
-
-  const seededAgeOptions = useMemo<Option[]>(
-    () =>
-      (loadedDetails?.targetAgeRanges ?? [])
-        .map((a: any) => ({
-          label: String(a?.range ?? "").trim(),
-          value: String(a?.id ?? "").trim(),
-        }))
-        .filter((x: any) => x.label && x.value),
-    [loadedDetails]
-  );
-
-  const seededCountryOptions = useMemo<Option[]>(
-    () =>
-      (loadedDetails?.targetCountries ?? [])
-        .map((c: any) => {
-          const name = String(c?.countryNameEn ?? "").trim();
-          const flag = String(c?.flag ?? "").trim();
-          const id = String(c?.id ?? "").trim();
-
-          if (!name || !id) return null;
-
-          return {
-            label: `${flag ? flag + " " : ""}${name}`,
-            value: id,
-          };
-        })
-        .filter(Boolean) as Option[],
-    [loadedDetails]
-  );
-
-  const seededSubcategoryOptions = useMemo<Option[]>(
-    () =>
-      (loadedDetails?.subcategories ?? [])
-        .map((s: any) => ({
-          label: String(s?.name ?? "").trim(),
-          value: String(s?.id ?? "").trim(),
-        }))
-        .filter((x: any) => x.label && x.value),
-    [loadedDetails]
-  );
-
-  const goalsOptions = useMemo(
-    () => mergeOptions(lists.productServiceGoals, seededGoalOptions),
-    [lists.productServiceGoals, seededGoalOptions]
-  );
-
-  const tierOptions = useMemo(
-    () => mergeOptions(lists.influencerTiers, seededTierOptions),
-    [lists.influencerTiers, seededTierOptions]
-  );
-
-  const formatOptions = useMemo(
-    () => mergeOptions(lists.contentFormats, seededFormatOptions),
-    [lists.contentFormats, seededFormatOptions]
-  );
-
-  const langOptions = useMemo(
-    () => mergeOptions(lists.contentLanguages, seededLangOptions),
-    [lists.contentLanguages, seededLangOptions]
-  );
-
-  const ageOptions = useMemo(
-    () => mergeOptions(lists.ageRanges, seededAgeOptions),
-    [lists.ageRanges, seededAgeOptions]
-  );
-
-  const countryNameOptions = useMemo(
-    () => mergeOptions(lists.countriesByName, seededCountryOptions),
-    [lists.countriesByName, seededCountryOptions]
-  );
-
-  const subcategoryOptionsMerged = useMemo(
-    () => mergeOptions(categoryPicker.subcategoryOptions, seededSubcategoryOptions),
-    [categoryPicker.subcategoryOptions, seededSubcategoryOptions]
-  );
-
-  const tierRangeById = useMemo(() => {
-    const out = new Map<string, TierRange>();
-
-    const add = (id: any, label?: string) => {
-      const key = String(id ?? "").trim();
-      if (!key) return;
-
-      const fromLabel = parseRangeFromText(label);
-      if (fromLabel) out.set(key, fromLabel);
-    };
-
-    for (const t of (loadedDetails?.influencerTiers ?? []) as any[]) {
-      add(t?.id, `${String(t?.category ?? "")} (${prettyTierValue(t?.value)})`);
-    }
-
-    const rawTiers = (lists as any)?.raw?.influencerTiers ?? [];
-    for (const t of rawTiers as any[]) {
-      add(t?.id, `${String(t?.category ?? "")} (${prettyTierValue(t?.value)})`);
-    }
-
-    for (const opt of tierOptions) {
-      add(opt.value, opt.label);
-    }
-
-    return out;
-  }, [loadedDetails, lists, tierOptions]);
-
-  const selectedCountryOptions = useMemo(() => {
-    const map = new Map((lists.raw.countries ?? []).map((c: any) => [countryKey(c), c]));
-
-    return (form.targetCountry ?? [])
-      .map((id) => {
-        const c = map.get(id);
-        if (!c) return null;
-
-        const name = String((c as any)?.countryNameEn ?? "").trim();
-        const flag = String((c as any)?.flag ?? "").trim();
-
-        if (!name) return null;
-
-        return {
-          label: `${flag ? flag + " " : ""}${name}`,
-          value: id,
-        };
-      })
-      .filter(Boolean) as Option[];
-  }, [form.targetCountry, lists.raw.countries]);
-
-  const countryOptionsForSelect = useMemo(
-    () => mergeOptions(countryNameOptions, selectedCountryOptions),
-    [countryNameOptions, selectedCountryOptions]
-  );
-
-  const dateOk = isValidDateRange(form.startDate, form.endDate);
-  const datesFilled = !!form.startDate && !!form.endDate;
-
-  const progress = useMemo(() => {
-    const checks = [
-      form.title.trim().length > 0,
-      form.description.trim().length > 49,
-      form.campaignType.trim().length > 0,
-      form.categoryId.trim().length > 0,
-      form.subcategories.length > 0,
-      form.goals.length > 0,
-      form.numberOfInfluencers > 0,
-      form.influencerTier.length > 0,
-      form.contentFormats.length > 0,
-      form.platforms.length > 0,
-      form.targetCountry.length > 0,
-      form.targetAgeGroups.length > 0,
-      form.paymentType.trim().length > 0,
-      form.startDate.trim().length > 0,
-      form.endDate.trim().length > 0,
-      Number(form.campaignBudget || 0) > 0,
-      datesFilled && dateOk,
-      isEditMode ||
-        ((form.productFiles?.length || 0) > 0 && productFileErrors.length === 0),
-    ];
-
-    return Math.round((checks.filter(Boolean).length / checks.length) * 100);
-  }, [form, dateOk, datesFilled, productFileErrors.length, isEditMode]);
-
-  const computedBottomBarMaxW = bottomBarMaxWidth ?? formMaxWidth + 120;
-
-  const resetForm = useCallback(() => {
-    setForm({ ...EMPTY_MANUAL });
-    setProductFileErrors([]);
-    setExistingProductImages([]);
-    setCampaignId("");
-    setLoadedDetails(null);
-
-    categoryPicker.hydrateSelectedCategory(null);
-    categoryPicker.setSearch("");
-    categoryPicker.setSubSearch("");
-
-    setDraftJustSaved(false);
-
-    if (draftSavedTimerRef.current) {
-      window.clearTimeout(draftSavedTimerRef.current);
-      draftSavedTimerRef.current = null;
-    }
-
-    setSubmitAttempted(false);
-    setServerFieldErrors({});
-
-    toastSuccess("Form reset", "Campaign form has been cleared.");
-  }, [categoryPicker]);
-
-  const saveDraftManually = useCallback(async () => {
-    const adminActor = getOptionalAdminPayload();
-    const brandId = resolveTargetBrandId(resolvedBrandId, initialFromCampaign || null);
-
-    if (!brandId) {
-      if (adminActor.adminId || adminActor.adminEmail) {
-        toastError("Brand not selected", "Please open this page with a valid brandId.");
-      } else {
-        toastError("Login required", "Please login again.");
-      }
-      return;
-    }
-
-    setDraftSaving(true);
-
-    if (draftSavedTimerRef.current) {
-      window.clearTimeout(draftSavedTimerRef.current);
-      draftSavedTimerRef.current = null;
-    }
-
-    try {
-      if (!campaignId) {
-        const createBase = await buildCreateManualPayload(brandId, form, false);
-        const res = await apiCampaignCreate({
-          ...(createBase as ActorAwareCreatePayload),
-          status: "draft" as CampaignStatus,
-        });
-
-        const id = pickCampaignId(res);
-        if (id) setCampaignId(id);
-
-        toastSuccess(extractBackendSuccessMessage(res, "Draft saved"));
-      } else {
-        const payload = buildEditDraftPayload(brandId, campaignId, form, "draft");
-        const res = await apiCampaignEditDraft(payload);
-
-        toastSuccess(extractBackendSuccessMessage(res, "Draft updated"));
-      }
-
-      setDraftJustSaved(true);
-      draftSavedTimerRef.current = window.setTimeout(
-        () => setDraftJustSaved(false),
-        1200
-      );
-    } catch (e) {
-      const backendMsg = extractBackendMessage(e);
-      const fieldErrors = extractBackendFieldErrors(e);
-
-      if (fieldErrors && Object.keys(fieldErrors).length) {
-        setServerFieldErrors(fieldErrors);
-        setSubmitAttempted(true);
-      }
-
-      toastError("Failed to save draft", backendMsg);
-    } finally {
-      setDraftSaving(false);
-    }
-  }, [
-    campaignId,
-    form,
-    resolvedBrandId,
-    initialFromCampaign,
-    extractBackendMessage,
-    extractBackendSuccessMessage,
-    extractBackendFieldErrors,
-  ]);
-
-  useEffect(() => {
-    return () => {
-      if (draftSavedTimerRef.current) {
-        window.clearTimeout(draftSavedTimerRef.current);
-      }
-    };
-  }, []);
-
-  const manualErrors = useMemo(
-    () =>
-      validateManualForm({
-        form,
-        dateOk,
-        blockingFileErrors: productFileErrors,
-        isEditMode,
-      }),
-    [form, dateOk, productFileErrors, isEditMode]
-  );
-
-  const combinedErrors = useMemo(() => {
-    return { ...manualErrors, ...(serverFieldErrors || {}) };
-  }, [manualErrors, serverFieldErrors]);
-
-  const stateFor = useCallback(
-    (key: string) =>
-      submitAttempted && combinedErrors[key] ? ("error" as const) : undefined,
-    [submitAttempted, combinedErrors]
-  );
-
-  const msgFor = useCallback(
-    (key: string) => (submitAttempted ? combinedErrors[key] : ""),
-    [submitAttempted, combinedErrors]
-  );
-
-  const publishCampaign = useCallback(async () => {
-    setSubmitAttempted(true);
-    setServerFieldErrors({});
-
-    const errs = validateManualForm({
-      form,
-      dateOk,
-      blockingFileErrors: productFileErrors,
-      isEditMode,
-    });
-
-    if (Object.values(errs).some(Boolean)) {
-      showValidationSummaryToast(errs);
-      return;
-    }
-
-    const adminActor = getOptionalAdminPayload();
-    const brandId = resolveTargetBrandId(resolvedBrandId, initialFromCampaign || null);
-
-    if (!brandId) {
-      if (adminActor.adminId || adminActor.adminEmail) {
-        toastError("Brand not selected", "Please open this page with a valid brandId.");
-      } else {
-        toastError("Login required", "Please login again.");
-      }
-      return;
-    }
-
-    setPublishing(true);
-
-    try {
-      let publishedCampaignId = campaignId;
-
-      let uploadedImages: Array<{
-        dataUrl: string;
-        name: string;
-        type: string;
-        contentType: string;
-        originalSize: number;
-        size: number;
-        key: string;
-      }> = [];
-
-      let productImagesForPayload: any[] = isEditMode ? existingProductImages : [];
-
-      if (form.productFiles?.length) {
-        const uploadRes = await apiUploadImages(form.productFiles);
-        const urls: string[] = uploadRes?.urls ?? uploadRes?.data?.urls ?? [];
-
-        if (!urls.length) {
-          throw new Error("Image upload failed. No image URLs returned from backend.");
-        }
-
-        uploadedImages = urls.map((url, i) => {
-          const file = form.productFiles[i];
-          const key = url.split("/campaign-images/")[1] ?? url.split("/").pop() ?? "";
-
-          return {
-            dataUrl: url,
-            name: file?.name ?? "",
-            type: file?.type ?? "image/jpeg",
-            contentType: file?.type ?? "image/jpeg",
-            originalSize: file?.size ?? 0,
-            size: file?.size ?? 0,
-            key,
-          };
-        });
-
-        productImagesForPayload = isEditMode
-          ? [...existingProductImages, ...uploadedImages]
-          : uploadedImages;
-      }
-
-      if (campaignId) {
-        const commonPayload = compact({
-          brandId,
-          campaignId,
-          ...getOptionalAdminPayload(),
-
-          campaignTitle: form.title.trim(),
-          description: form.description.trim(),
-          campaignType: form.campaignType,
-          categoryId: form.categoryId,
-          subcategoryIds: form.subcategories,
-          productLink: form.productLink.trim(),
-          productImages: productImagesForPayload.length
-            ? productImagesForPayload
-            : undefined,
-          campaignGoals: form.goals,
-          influencerTierIds: form.influencerTier,
-          contentFormats: form.contentFormats,
-          contentLanguageIds: form.contentLanguage,
-          targetCountryIds: form.targetCountry,
-          targetAgeRanges: form.targetAgeGroups,
-          preferredHashtags: form.hashtags,
-          numberOfInfluencers: Number(form.numberOfInfluencers || 0),
-          ...(Number(form.minFollowers) > 0
-            ? { minFollowers: Number(form.minFollowers) }
-            : {}),
-          ...(Number(form.maxFollowers) > 0
-            ? { maxFollowers: Number(form.maxFollowers) }
-            : {}),
-          campaignBudget: Number(form.campaignBudget || 0),
-          paymentType: form.paymentType,
-          additionalNotes: form.additionalNotes || undefined,
-          startAt: form.startDate || undefined,
-          endAt: form.endDate || undefined,
-        });
-
-        const updated: any = isEditMode
-          ? await apiAdminEditCampaign(commonPayload)
-          : await apiCampaignEditDraft({
-              ...commonPayload,
-              status: "active" as CampaignStatus,
-            } as ActorAwareEditPayload);
-
-        const cid = pickCampaignId(updated) || campaignId;
-
-        publishedCampaignId = cid;
-
-        if (cid) setCampaignId(cid);
-
-        toastSuccess(
-          extractBackendSuccessMessage(
-            updated,
-            isEditMode ? "Campaign changes saved" : "Campaign published"
-          )
-        );
-      } else {
-        const base = buildCreateManualPayload(
-          brandId,
-          form,
-          false
-        ) as ActorAwareCreatePayload;
-
-        const created: any = await apiCampaignCreate({
-          ...base,
-          productImages: productImagesForPayload,
-          status: "active" as CampaignStatus,
-        });
-
-        const cid = pickCampaignId(created);
-
-        publishedCampaignId = cid;
-
-        if (cid) setCampaignId(cid);
-
-        toastSuccess(extractBackendSuccessMessage(created, "Campaign published"));
-      }
-
-      if (publishedCampaignId) {
-        resetForm();
-        router.replace(`/admin/campaigns/view?id=${publishedCampaignId}`);
-        onAfterPublish?.();
-      } else {
-        toastWarning("Campaign published", "Campaign ID not found for redirect.");
-      }
-    } catch (e: any) {
-      const backendMsg = extractBackendMessage(e);
-      const fe = extractBackendFieldErrors(e);
-
-      if (fe && Object.keys(fe).length) {
-        setServerFieldErrors(fe);
-        setSubmitAttempted(true);
-      }
-
-      toastError(
-        isEditMode ? "Failed to save campaign" : "Failed to publish campaign",
-        backendMsg
-      );
-    } finally {
-      setPublishing(false);
-    }
-  }, [
-    campaignId,
-    isEditMode,
-    form,
-    dateOk,
-    productFileErrors,
-    resolvedBrandId,
-    initialFromCampaign,
-    resetForm,
-    onAfterPublish,
-    extractBackendMessage,
-    extractBackendFieldErrors,
-    extractBackendSuccessMessage,
-    existingProductImages,
-    router,
-    showValidationSummaryToast,
-  ]);
-
-  const catSearchProps = useSearchProps(categoryPicker.search, categoryPicker.setSearch);
-  const tierSearchProps = useSearchProps(
-    lists.search.influencerTiers.value,
-    lists.search.influencerTiers.onChange
-  );
-  const formatSearchProps = useSearchProps(
-    lists.search.contentFormats.value,
-    lists.search.contentFormats.onChange
-  );
-  const langSearchProps = useSearchProps(
-    lists.search.contentLanguages.value,
-    lists.search.contentLanguages.onChange
-  );
-  const countrySearchProps = useSearchProps(
-    lists.search.countries.value,
-    lists.search.countries.onChange
-  );
-  const ageSearchProps = useSearchProps(
-    lists.search.ageRanges.value,
-    lists.search.ageRanges.onChange
-  );
-  const hashtagSearchProps = useSearchProps(
-    lists.search.preferredHashtags.value,
-    lists.search.preferredHashtags.onChange
-  );
-
-  return (
-    <>
-      <div className="cg-page-frame flex min-h-0 h-[100dvh] w-full flex-col overflow-hidden">
-        <div className="grid h-full min-h-0 w-full grid-cols-1">
-          <section className="flex min-h-0 min-w-0 flex-col">
-            <div className="flex min-h-0 flex-col border-0">
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0">
-                  <div className="cg-accordion-title">
-                    {isEditMode ? "Edit Campaign" : "Create Campaign"}
-                  </div>
-                </div>
-              </div>
-
-              <div className="shrink-0 px-4 pt-5 sm:px-6 lg:px-10">
-                <div className="w-full pb-4">
-                  <ProgressBar
-                    value={progress}
-                    heightClassName="h-[3px]"
-                    barClassName="bg-success-500"
-                  />
-                </div>
-              </div>
-
-              <div className="cg-scrollbar flex-1 min-h-0 overflow-x-hidden overflow-y-auto overscroll-contain">
-                <div
-                  className="min-w-0 px-4 pb-10 sm:px-6 lg:px-5"
-                  style={{ paddingBottom: "calc(var(--cg-bottombar-h) + 32px)" }}
-                >
-                  <div className="rounded-l border border-[#D6D6D6] p-5">
-                    <div className="bg-white p-5">
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="min-w-0">
-                          <div className="cg-accordion-title">
-                            Product / Service Info
-                          </div>
-                          <div className="cg-accordion-subtitle">
-                            Describe your product or service, the campaign goal, and what you’d like creators to highlight.
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="mt-4 flex flex-col gap-4">
-                        <FloatingInput
-                          label="Campaign title"
-                          maxLength={100}
-                          required
-                          value={form.title}
-                          onValueChange={(val) => setField("title", val)}
-                          state={stateFor("title")}
-                          errorText={msgFor("title")}
-                        />
-
-                        <LabeledTextarea
-                          label="Description"
-                          required
-                          value={form.description}
-                          minLength={50}
-                          maxLength={4000}
-                          onChange={(e: any) =>
-                            setField("description", String(e.target.value))
-                          }
-                          state={stateFor("description")}
-                          errorText={msgFor("description")}
-                        />
-
-                        <FloatingSelect
-                          {...SEARCHABLE_UI}
-                          label="Campaign Type"
-                          value={form.campaignType}
-                          searchable={false}
-                          onValueChange={(v) => setField("campaignType", v)}
-                          state={stateFor("campaignType")}
-                          errorText={msgFor("campaignType")}
-                        >
-                          {CAMPAIGN_TYPES.map((x) => (
-                            <SelectItem key={x.value} value={x.value}>
-                              {x.label}
-                            </SelectItem>
-                          ))}
-                        </FloatingSelect>
-
-                        <div className="grid gap-4 md:grid-cols-2">
-                          <FloatingSelect
-                            {...catSearchProps}
-                            label="Campaign category"
-                            required
-                            value={form.categoryId}
-                            onValueChange={(id) => {
-                              categoryPicker.selectCategoryId(id);
-                              const opt = categoryOptionsMerged.find(
-                                (o) => o.value === id
-                              );
-
-                              setField("categoryId", id);
-                              setField("categoryName", opt?.label ?? "");
-                              setField("subcategories", []);
-                            }}
-                            state={stateFor("categoryId")}
-                            errorText={msgFor("categoryId")}
-                            clientFilter={false}
-                          >
-                            {categoryOptionsMerged.map((x) => (
-                              <SelectItem key={x.value} value={x.value}>
-                                {x.label}
-                              </SelectItem>
-                            ))}
-                          </FloatingSelect>
-
-                          <FloatingMultiSelect
-                            {...SEARCHABLE_UI}
-                            label="Sub Category"
-                            required
-                            value={form.subcategories}
-                            options={subcategoryOptionsMerged}
-                            onValueChange={(next) => setField("subcategories", next)}
-                            state={stateFor("subcategories")}
-                            errorText={msgFor("subcategories")}
-                            includeAll={false}
-                          />
-                        </div>
-
-                        <ProductCardUpload
-                          files={form.productFiles}
-                          required
-                          error={Boolean(stateFor("productFiles"))}
-                          errorText={msgFor("productFiles")}
-                          onFilesChange={(next) => {
-                            const errs = validateFiles(next, "Product file");
-                            setProductFileErrors(errs);
-
-                            if (errs.length) {
-                              toastError("Invalid product file", errs[0]);
-                              return;
-                            }
-
-                            setField("productFiles", next);
-                            setServerFieldErrors((prev) => {
-                              const nextErrors = { ...prev };
-                              delete nextErrors.productFiles;
-                              return nextErrors;
-                            });
-                          }}
-                        />
-
-                        {isEditMode && existingProductImages.length > 0 ? (
-                          <div className="rounded-xl border border-neutral-200 bg-white p-3">
-                            <div className="mb-2 text-sm font-medium text-neutral-800">
-                              Existing Campaign Images
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-                              {existingProductImages.map((img, index) => {
-                                const src = img.dataUrl || img.url || "";
-
-                                return (
-                                  <div
-                                    key={`${src}-${index}`}
-                                    className="relative overflow-hidden rounded-xl border border-neutral-200 bg-neutral-50"
-                                  >
-                                    <img
-                                      src={src}
-                                      alt={img.name || `Campaign image ${index + 1}`}
-                                      className="h-28 w-full object-cover"
-                                    />
-
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        setExistingProductImages((prev) =>
-                                          prev.filter((_, i) => i !== index)
-                                        )
-                                      }
-                                      className="absolute right-2 top-2 rounded-full bg-black/75 px-2 py-1 text-xs font-semibold text-white"
-                                    >
-                                      Remove
-                                    </button>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        ) : null}
-
-                        <FloatingInput
-                          label="Product Link / Video references"
-                          value={form.productLink}
-                          onValueChange={(val) => setField("productLink", val)}
-                          state={stateFor("productLink")}
-                          errorText={msgFor("productLink")}
-                        />
-
-                        <div>
-                          <div
-                            className={cn(
-                              "cg-description mb-2 flex items-center gap-1 text-size-[14px]",
-                              stateFor("goals") && "!text-red-600"
-                            )}
-                          >
-                            <span>Campaign Goals</span>
-                            <span className="!text-red-600">*</span>
-                          </div>
-
-                          <ChipMultiSelect
-                            options={goalsOptions}
-                            value={form.goals}
-                            onChange={(next) => setField("goals", next)}
-                          />
-
-                          {stateFor("goals") ? (
-                            <div className="mt-1 text-[14px] text-red-600">
-                              {msgFor("goals")}
-                            </div>
-                          ) : null}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="mt-10 flex flex-col gap-[40px]">
-                      <AccordionCard
-                        title="Creator Requirements"
-                        subtitle="Define who you’re looking to collaborate with."
-                      >
-                        <div className="grid gap-4 md:grid-cols-2">
-                          <FloatingInput
-                            label="Number of Influencers"
-                            type="number"
-                            required
-                            value={String(form.numberOfInfluencers || "")}
-                            onValueChange={(v) =>
-                              setField("numberOfInfluencers", clampNonNegative(v))
-                            }
-                            state={stateFor("numberOfInfluencers")}
-                            errorText={msgFor("numberOfInfluencers")}
-                          />
-
-                          <FloatingMultiSelect
-                            {...tierSearchProps}
-                            label="Influencer Tier"
-                            required
-                            value={form.influencerTier}
-                            searchable={false}
-                            options={tierOptions}
-                            onValueChange={(next) => {
-                              setForm((prev) => {
-                                const selected = next ?? [];
-
-                                if (selected.length === 0) {
-                                  followersTouchedRef.current.min = false;
-                                  followersTouchedRef.current.max = false;
-
-                                  return {
-                                    ...prev,
-                                    influencerTier: [],
-                                    minFollowers: 0,
-                                    maxFollowers: 0,
-                                  };
-                                }
-
-                                const ranges = selected.map((id) =>
-                                  tierRangeById.get(id)
-                                );
-                                const agg = aggregateRanges(ranges);
-
-                                const nextMin =
-                                  !followersTouchedRef.current.min && agg?.min != null
-                                    ? agg.min
-                                    : prev.minFollowers;
-
-                                const nextMax =
-                                  !followersTouchedRef.current.max && agg?.max != null
-                                    ? agg.max
-                                    : prev.maxFollowers;
-
-                                return {
-                                  ...prev,
-                                  influencerTier: selected,
-                                  minFollowers: nextMin ?? prev.minFollowers,
-                                  maxFollowers: nextMax ?? prev.maxFollowers,
-                                };
-                              });
-
-                              setServerFieldErrors((prev) => {
-                                if (!prev.influencerTier) return prev;
-
-                                const out = { ...prev };
-                                delete out.influencerTier;
-                                return out;
-                              });
-                            }}
-                            includeAll={false}
-                            state={stateFor("influencerTier")}
-                            errorText={msgFor("influencerTier")}
-                          />
-
-                          <FloatingInput
-                            label="Min Followers"
-                            type="number"
-                            value={String(form.minFollowers || "")}
-                            onValueChange={(v) => {
-                              const n = clampNonNegative(v);
-                              followersTouchedRef.current.min = n > 0;
-                              setField("minFollowers", n);
-                            }}
-                            state={stateFor("minFollowers")}
-                            errorText={msgFor("minFollowers")}
-                          />
-
-                          <FloatingInput
-                            label="Max Followers"
-                            type="number"
-                            value={String(form.maxFollowers || "")}
-                            onValueChange={(v) => {
-                              const n = clampNonNegative(v);
-                              followersTouchedRef.current.max = n > 0;
-                              setField("maxFollowers", n);
-                            }}
-                            state={stateFor("maxFollowers")}
-                            errorText={msgFor("maxFollowers")}
-                          />
-
-                          <FloatingMultiSelect
-                            {...formatSearchProps}
-                            label="Content Format"
-                            required
-                            value={form.contentFormats}
-                            options={formatOptions}
-                            onValueChange={(next) => setField("contentFormats", next)}
-                            includeAll={false}
-                            searchable={false}
-                            state={stateFor("contentFormats")}
-                            errorText={msgFor("contentFormats")}
-                          />
-
-                          <FloatingMultiSelect
-                            {...langSearchProps}
-                            label="Content Language"
-                            value={form.contentLanguage}
-                            options={langOptions}
-                            onValueChange={(next) => setField("contentLanguage", next)}
-                            includeAll={false}
-                          />
-                        </div>
-                      </AccordionCard>
-
-                      <AccordionCard
-                        title="Timeline & Payments"
-                        subtitle="Set Budget for delivery and how you want to pay creators."
-                      >
-                        <div className="grid gap-4 md:grid-cols-2">
-                          <FloatingSelect
-                            label="Payment Type"
-                            required
-                            value={form.paymentType}
-                            onValueChange={(v) => setField("paymentType", v)}
-                            state={stateFor("paymentType")}
-                            errorText={msgFor("paymentType")}
-                            searchable={false}
-                            searchPlaceholder={undefined}
-                          >
-                            <SelectItem value="Milestone">Milestone</SelectItem>
-                            <SelectItem value="Fixed">Fixed</SelectItem>
-                            <SelectItem value="Gifting">Gifting</SelectItem>
-                          </FloatingSelect>
-
-                          <FloatingInput
-                            label="Campaign Budget"
-                            required
-                            type="number"
-                            prefixText="$"
-                            value={String(form.campaignBudget || "")}
-                            onValueChange={(v) =>
-                              setField("campaignBudget", clampNonNegative(v))
-                            }
-                            state={stateFor("campaignBudget")}
-                            errorText={msgFor("campaignBudget")}
-                          />
-
-                          <FloatingDateInput
-                            label="Start Date"
-                            required
-                            type="date"
-                            value={form.startDate}
-                            min={TODAY}
-                            onValueChange={(v) => {
-                              setField("startDate", v);
-
-                              if (form.endDate && isSameOrBeforeISO(form.endDate, v)) {
-                                setField("endDate", addDaysISO(v, 1));
-                              }
-                            }}
-                            state={stateFor("startDate")}
-                            errorText={msgFor("startDate")}
-                          />
-
-                          <FloatingDateInput
-                            label="End Date"
-                            required
-                            type="date"
-                            value={form.endDate}
-                            min={form.startDate ? addDaysISO(form.startDate, 1) : TODAY}
-                            onValueChange={(v) => setField("endDate", v)}
-                            state={stateFor("endDate")}
-                            errorText={msgFor("endDate")}
-                          />
-                        </div>
-                      </AccordionCard>
-
-                      <AccordionCard
-                        title="Audience & Platforms"
-                        subtitle="Choose where and who this campaign should reach."
-                      >
-                        <div className="grid gap-4 md:grid-cols-2">
-                          <div className="md:col-span-2">
-                            <FloatingMultiSelect
-                              {...SEARCHABLE_UI}
-                              label="Platform Selection"
-                              required
-                              value={form.platforms}
-                              options={MANUAL_PLATFORM_OPTIONS}
-                              onValueChange={(next) => setField("platforms", next)}
-                              includeAll={false}
-                              searchable={false}
-                              state={stateFor("platforms")}
-                              errorText={msgFor("platforms")}
-                            />
-                          </div>
-
-                          <FloatingMultiSelect
-                            {...countrySearchProps}
-                            label="Target country"
-                            required
-                            value={form.targetCountry}
-                            options={countryOptionsForSelect}
-                            onValueChange={(next) => setField("targetCountry", next)}
-                            includeAll={false}
-                            state={stateFor("targetCountry")}
-                            errorText={msgFor("targetCountry")}
-                          />
-
-                          <FloatingMultiSelect
-                            {...ageSearchProps}
-                            label="Target age group"
-                            required
-                            value={form.targetAgeGroups}
-                            searchable={false}
-                            options={ageOptions}
-                            onValueChange={(next) => setField("targetAgeGroups", next)}
-                            includeAll={false}
-                            state={stateFor("targetAgeGroups")}
-                            errorText={msgFor("targetAgeGroups")}
-                          />
-
-                          <div className="md:col-span-2">
-                            <LabeledTextarea
-                              label="Additional notes"
-                              placeholder="Add any extra context, internal notes, or instructions you don’t want to miss."
-                              value={form.additionalNotes}
-                              onChange={(e) =>
-                                setField(
-                                  "additionalNotes",
-                                  String((e as any).target.value)
-                                )
-                              }
-                              maxLength={4000}
-                              showAttachment
-                              attachment={form.attachment}
-                              onAttachmentChange={(file) => {
-                                const errs = file ? validateFiles([file], "Attachment") : [];
-
-                                if (errs.length) {
-                                  toastError("Invalid attachment", errs[0]);
-                                  return;
-                                }
-
-                                setField("attachment", file);
-                              }}
-                              accept="image/*,.pdf,.doc,.docx"
-                            />
-                          </div>
-
-                          <div className="md:col-span-2">
-                            <FloatingTagInput
-                              {...hashtagSearchProps}
-                              label="Preferred Hashtags"
-                              value={form.hashtags}
-                              options={hashtagOptions}
-                              onValueChange={(next) => setField("hashtags", next)}
-                              includeAll={false}
-                              dropdownDirection="up"
-                            />
-                          </div>
-                        </div>
-                      </AccordionCard>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </section>
-        </div>
-      </div>
-
-      <FixedBottomBar
-        sidebarOffsetPx={sidebarOffsetPx}
-        containerMaxWidth={computedBottomBarMaxW}
-        left={
-          <>
-            <Button
-              variant="raised"
-              className="shadow-none"
-              style={{ color: "var(--Light-Border-Negative, #E35141)" }}
-              onClick={resetForm}
-              disabled={draftSaving || publishing}
-            >
-              Reset
-            </Button>
-
-            <span aria-hidden className="h-5 w-px bg-[#E6E6E6]" />
-
-            <Button
-              variant="raised"
-              className="shadow-none"
-              onClick={saveDraftManually}
-              disabled={draftSaving || publishing}
-            >
-              {draftSaving
-                ? "Saving Draft..."
-                : draftJustSaved
-                  ? "Draft Saved"
-                  : "Save Draft"}
-            </Button>
-          </>
-        }
-        right={
-          <Button onClick={publishCampaign} disabled={publishing}>
-            <PaperPlaneTilt size={16} className="mr-2" />
-            {publishing
-              ? isEditMode
-                ? "Saving Changes…"
-                : "Publishing…"
-              : isEditMode
-                ? "Save Changes"
-                : "Publish Campaign"}
-          </Button>
-        }
-      />
-    </>
-  );
-}
-
-/* ============================================================================
-   Main Page
-============================================================================ */
-
-export default function CreateCampaignPage() {
   const searchParams = useSearchParams();
 
-  const editCampaignId =
-    searchParams.get("campaignId") ||
-    searchParams.get("id") ||
-    "";
+  // Campaign id is taken only from the URL query/header:
+  // /brand/influencer-invitation?q=active&campaignId=<campaignid>
+  const campaignId = String(searchParams.get("campaignId") || "").trim();
+  const q = String(searchParams.get("q") || "").trim();
 
-  const queryBrandId = searchParams.get("brandId") || "";
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
 
-  const sidebarOffsetPx = useSidebarOffsetPx();
-  const [manualFromCampaign, setManualFromCampaign] =
-    useState<EnrichedCampaignDoc | null>(null);
+  React.useEffect(() => {
+    if (!mounted) return;
 
-  const [loading, setLoading] = useState(Boolean(editCampaignId));
+    setShowConfetti(true);
 
-  const lists = useCampaignLists(true);
+    const timer = setTimeout(() => {
+      setShowConfetti(false);
+    }, 3000);
 
-  const resolvedBrandId = useMemo(
-    () => resolveTargetBrandId(queryBrandId, manualFromCampaign),
-    [queryBrandId, manualFromCampaign]
+    return () => clearTimeout(timer);
+  }, [mounted]);
+
+  const fetchExistingInvitations = React.useCallback(
+    async (brandId: string, currentCampaignId: string) => {
+      const data = await post<InvitationListResponse>("/newinvitations/list", {
+        brandId,
+        campaignId: currentCampaignId,
+        status: "invited",
+        page: 1,
+        limit: 200,
+      });
+
+      const existing = getExistingInvitations(data);
+      const existingKeys = new Set<string>();
+
+      existing.forEach((inv) => {
+        if (!isInvitationActive(inv)) return;
+
+        const key = invitationKey(inv);
+        if (key) existingKeys.add(key);
+      });
+
+      return existingKeys;
+    },
+    []
   );
 
-  useEffect(() => {
-    if (!editCampaignId) {
+  const fetchYouTubeCampaignRecommendations = React.useCallback(
+    async (brandId: string, currentCampaignId: string) => {
+      const url = `/youtube-data/campaign/${currentCampaignId}/recommend-influencers`;
+      const body = {
+        brandId,
+        campaignId: currentCampaignId,
+        limit: INVITATION_CREATOR_LIMIT,
+        minimumInfluencers: INVITATION_CREATOR_LIMIT,
+        minInfluencers: INVITATION_CREATOR_LIMIT,
+        save: true,
+        // Do not hard-block by campaign target country on the invite page.
+        // Some campaigns have uncommon target countries, so strict country filtering
+        // can return 0 creators. Backend will still prioritize exact matches first,
+        // then fill the list with relevant YouTube creators up to 50.
+        strictCountry: false,
+        strictTier: false,
+        allowFallbackCountries: true,
+        allowFallbackTier: true,
+        fast: true,
+        background: false,
+        queue: true,
+        incremental: true,
+        recommendationQueue: true,
+        type: "campaign-recommendation",
+        batchSize: 1,
+      };
+
+      const response = await api.post<RecommendedCreatorsResponse>(url, body, {
+        timeout: 300000,
+      });
+
+      return response.data;
+    },
+    []
+  );
+
+  const applyRecommendationResponse = React.useCallback(
+    (data: RecommendedCreatorsResponse, sourceInfo: ResolvedRecommendationSource) => {
+      const anyData = (Array.isArray(data) ? {} : data || {}) as any;
+      const requestedTier = getRequestedTierFromRecommendationResponse(data);
+      const nextList = sortCreatorsForCampaignTier(
+        filterCreatorsForRecommendationSource(getRecommendedCreators(data), sourceInfo),
+        requestedTier
+      );
+
+      setRecommendationProgress({
+        active: Boolean(anyData.processing && !anyData.done),
+        done: Boolean(anyData.done),
+        count: Number(anyData.count ?? anyData.returnedCount ?? nextList.length ?? 0),
+        target: Number(anyData.target ?? anyData.limit ?? INVITATION_CREATOR_LIMIT),
+        keywords: getRecommendationProgressKeywords(data),
+        jobId: anyData.jobId,
+      });
+
+      const merged = mergeCreatorsTopToBottom(creatorsRef.current, nextList).slice(
+        0,
+        INVITATION_CREATOR_LIMIT
+      );
+      creatorsRef.current = merged;
+      setCreators(merged);
+
+      setSelected((prevSelected) => {
+        const nextSelected = new Set(prevSelected);
+
+        merged.forEach((creator, index) => {
+          const identityKey = getCreatorIdentityKey(creator);
+          if (autoSelectedCreatorKeysRef.current.has(identityKey)) return;
+
+          autoSelectedCreatorKeysRef.current.add(identityKey);
+          creatorKeysForMatching(creator, index).forEach((key) => {
+            nextSelected.add(key);
+          });
+        });
+
+        return nextSelected;
+      });
+
+      return {
+        jobId: String(anyData.jobId || ""),
+        done: Boolean(anyData.done || !anyData.processing),
+      };
+    },
+    []
+  );
+
+  const startRecommendationPolling = React.useCallback(
+    (jobId: string, sourceInfo: ResolvedRecommendationSource) => {
+      if (!jobId) return;
+
+      if (recommendationPollRef.current) {
+        recommendationPollRef.current.cancelled = true;
+      }
+
+      const pollState = { cancelled: false };
+      recommendationPollRef.current = pollState;
+
+      const poll = async () => {
+        for (let attempt = 0; attempt < 600; attempt += 1) {
+          if (pollState.cancelled) return;
+
+          await new Promise((resolve) => window.setTimeout(resolve, 1100));
+          if (pollState.cancelled) return;
+
+          const response = await api.get<RecommendedCreatorsResponse>(
+            "/youtube-data/creators",
+            {
+              params: {
+                jobId,
+                ts: Date.now(),
+              },
+              timeout: 60000,
+            }
+          );
+
+          const status = applyRecommendationResponse(response.data, sourceInfo);
+
+          if (status.done) {
+            setRecommendationProgress((prev) => ({
+              ...prev,
+              active: false,
+              done: true,
+            }));
+            return;
+          }
+        }
+      };
+
+      void poll().catch(async (err) => {
+        if (pollState.cancelled) return;
+
+        const message = await getApiErrorMessage(
+          err,
+          "Failed to refresh creator recommendations"
+        );
+        setError(message);
+        setRecommendationProgress((prev) => ({
+          ...prev,
+          active: false,
+        }));
+      });
+    },
+    [applyRecommendationResponse]
+  );
+
+  React.useEffect(() => {
+    return () => {
+      if (recommendationPollRef.current) {
+        recommendationPollRef.current.cancelled = true;
+      }
+    };
+  }, []);
+
+  const fetchCreators = React.useCallback(async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const brandId = getStoredBrandMongoId();
+
+      if (!brandId || !campaignId) {
+        throw new Error("Missing brand _id or campaign _id");
+      }
+
+      const [sourceData, existingKeys] = await Promise.all([
+        post<CampaignRecommendationSourceResponse>(
+          "/modash/campaign-recommendation-source",
+          {
+            brandId,
+            campaignId,
+          }
+        ),
+        fetchExistingInvitations(brandId, campaignId),
+      ]);
+
+      const sourceInfo = getResolvedRecommendationSource(sourceData);
+      setAlreadyInvited(existingKeys);
+      setSending(new Set());
+
+      if (sourceInfo.source === "youtube_api") {
+        if (recommendationPollRef.current) {
+          recommendationPollRef.current.cancelled = true;
+        }
+
+        autoSelectedCreatorKeysRef.current = new Set();
+        creatorsRef.current = [];
+        setCreators([]);
+        setSelected(new Set());
+        setRecommendationProgress({
+          active: true,
+          done: false,
+          count: 0,
+          target: INVITATION_CREATOR_LIMIT,
+          keywords: [],
+        });
+
+        const firstData = await fetchYouTubeCampaignRecommendations(brandId, campaignId);
+        const status = applyRecommendationResponse(firstData, sourceInfo);
+
+        if (status.jobId && !status.done) {
+          startRecommendationPolling(status.jobId, sourceInfo);
+        } else {
+          setRecommendationProgress((prev) => ({
+            ...prev,
+            active: false,
+            done: true,
+          }));
+        }
+
+        return;
+      }
+
+      const recommendedData = await post<RecommendedCreatorsResponse>(
+        "/modash/recommended-by-campaign",
+        {
+          brandId,
+          campaignId,
+          limit: INVITATION_CREATOR_LIMIT,
+          source: sourceInfo.source,
+          platforms: sourceInfo.effectivePlatforms,
+          rule: sourceInfo.rule,
+        }
+      );
+
+      const rawList = getRecommendedCreators(recommendedData);
+      const requestedTier = getRequestedTierFromRecommendationResponse(recommendedData);
+      const list = sortCreatorsForCampaignTier(
+        filterCreatorsForRecommendationSource(rawList, sourceInfo),
+        requestedTier
+      );
+
+      const defaultSelected = new Set<string>();
+
+      list.forEach((creator, index) => {
+        creatorKeysForMatching(creator, index).forEach((key) => {
+          defaultSelected.add(key);
+        });
+      });
+
+      setRecommendationProgress((prev) => ({
+        ...prev,
+        active: false,
+        done: true,
+        count: list.length,
+        target: list.length || INVITATION_CREATOR_LIMIT,
+      }));
+      creatorsRef.current = list;
+      setCreators(list);
+      setSelected(defaultSelected);
+    } catch (e: any) {
+      const message = await getApiErrorMessage(e, "Failed to load creators");
+
+      setError(message);
+      creatorsRef.current = [];
+      setCreators([]);
+      setAlreadyInvited(new Set());
+      setSelected(new Set());
+      setSending(new Set());
+      setRecommendationProgress({
+        active: false,
+        done: false,
+        count: 0,
+        target: INVITATION_CREATOR_LIMIT,
+        keywords: [],
+      });
+
+      toast({
+        icon: "error",
+        title: "Unable to load creators",
+        text: message,
+      });
+    } finally {
       setLoading(false);
+    }
+  }, [
+    campaignId,
+    fetchExistingInvitations,
+    fetchYouTubeCampaignRecommendations,
+    applyRecommendationResponse,
+    startRecommendationPolling,
+  ]);
+
+  React.useEffect(() => {
+    fetchCreators();
+  }, [fetchCreators]);
+
+  const createInvitationForCreator = React.useCallback(
+    async (
+      creator: Creator,
+      index: number,
+      brandId: string,
+      currentCampaignId: string
+    ) => {
+      const platform = getCreatorPlatform(creator);
+      const handle =
+        getCreatorHandle(creator) ||
+        (isYouTubeCreator(creator) ? getCreatorChannelId(creator) : "");
+
+      if (!handle) {
+        throw new Error(`${getCreatorName(creator)} handle is missing`);
+      }
+
+      if (!platform) {
+        throw new Error(`${getCreatorName(creator)} platform is missing`);
+      }
+
+      await post("/newinvitations/create", {
+        brandId,
+        campaignId: currentCampaignId,
+        handle,
+        platform,
+        status: "invited",
+        modashUserId: getCreatorModashId(creator) || undefined,
+        aiScore: getCreatorAiScore(creator),
+        rawAiScore:
+          typeof creator.rawAiScore === "number"
+            ? creator.rawAiScore
+            : undefined,
+        recommendationReason: creator.recommendationReason || "",
+        emailTemplate: buildInvitationEmailTemplate(creator),
+      });
+
+      return creatorKeysForMatching(creator, index);
+    },
+    []
+  );
+
+  const fetchYouTubePreview = React.useCallback(async (creator: Creator) => {
+    const channelId = getCreatorChannelId(creator);
+    const handle = getCreatorHandle(creator);
+
+    if (!channelId && !handle) {
+      throw new Error("YouTube channelId or handle is missing");
+    }
+
+    const response = await post<YouTubePreviewResponse>(
+      "/youtube/profile/preview",
+      {
+        ...(channelId ? { channelId } : { handle }),
+        videosLimit: 15,
+      }
+    );
+
+    if (!response?.data) {
+      throw new Error("YouTube profile data is missing");
+    }
+
+    return mapYouTubePreviewToReport(response.data);
+  }, []);
+
+  const fetchModashReport = React.useCallback(
+    async (
+      creator: Creator,
+      calculationMethod: ReportCalculationMethod,
+      forceRefresh = false
+    ) => {
+      const brandId = getStoredBrandMongoId();
+      const adminId =
+        typeof window !== "undefined"
+          ? String(window.localStorage.getItem("adminId") || "").trim()
+          : "";
+
+      const userId = getCreatorModashId(creator);
+      const platform = getCreatorPlatform(creator);
+      const handle = getCreatorHandle(creator).replace(/^@/, "");
+
+      if (!brandId && !adminId) {
+        throw new Error("Missing brand/admin id");
+      }
+
+      if (!userId) {
+        throw new Error("Creator Modash userId is missing");
+      }
+
+      if (!platform) {
+        throw new Error("Creator platform is missing");
+      }
+
+      const response = await api.get<ModashReportResponse>("/modash/report", {
+        params: {
+          userId,
+          platform,
+          calculationMethod,
+          handle,
+          username: handle,
+          ...(brandId ? { brandId } : {}),
+          ...(adminId && !brandId
+            ? {
+              adminId,
+              role: "admin",
+            }
+            : {}),
+          ...(forceRefresh
+            ? {
+              refresh: "1",
+              force: "1",
+            }
+            : {}),
+        },
+      });
+
+      return response.data;
+    },
+    []
+  );
+
+  const fetchCreatorReport = React.useCallback(
+    async (
+      creator: Creator,
+      calculationMethod: ReportCalculationMethod,
+      forceRefresh = false
+    ) => {
+      if (isYouTubeCreator(creator)) {
+        return fetchYouTubePreview(creator);
+      }
+
+      return fetchModashReport(creator, calculationMethod, forceRefresh);
+    },
+    [fetchModashReport, fetchYouTubePreview]
+  );
+
+  const openReportForCreator = React.useCallback(
+    async (
+      creator: Creator,
+      calculationMethod: ReportCalculationMethod = reportCalculationMethod,
+      forceRefresh = false
+    ) => {
+      setReportDrawer({
+        open: true,
+        creator,
+        loading: true,
+        error: null,
+        data: null,
+        raw: null,
+        lastFetchedAt: null,
+        calculationMethod,
+      });
+
+      try {
+        const data = await fetchCreatorReport(
+          creator,
+          calculationMethod,
+          forceRefresh
+        );
+
+        setReportDrawer({
+          open: true,
+          creator,
+          loading: false,
+          error: null,
+          data,
+          raw: data,
+          lastFetchedAt: getReportLastFetchedAt(data),
+          calculationMethod,
+        });
+      } catch (err: any) {
+        const message = await getApiErrorMessage(
+          err,
+          "Failed to load full Creator profile"
+        );
+
+        setReportDrawer({
+          open: true,
+          creator,
+          loading: false,
+          error: message,
+          data: null,
+          raw: null,
+          lastFetchedAt: null,
+          calculationMethod,
+        });
+
+        toast({
+          icon: "error",
+          title: "Report unavailable",
+          text: message,
+        });
+      }
+    },
+    [fetchCreatorReport, reportCalculationMethod]
+  );
+
+  const closeReportDrawer = React.useCallback(() => {
+    setReportDrawer((prev) => ({
+      ...prev,
+      open: false,
+    }));
+  }, []);
+
+  const refreshCurrentReport = React.useCallback(() => {
+    if (!reportDrawer.creator) return;
+
+    void openReportForCreator(
+      reportDrawer.creator,
+      reportDrawer.calculationMethod,
+      true
+    );
+  }, [
+    openReportForCreator,
+    reportDrawer.creator,
+    reportDrawer.calculationMethod,
+  ]);
+
+  const handleReportCalcChange = React.useCallback(
+    (calc: ReportCalculationMethod) => {
+      setReportCalculationMethod(calc);
+
+      if (!reportDrawer.creator) return;
+
+      void openReportForCreator(reportDrawer.creator, calc, false);
+    },
+    [openReportForCreator, reportDrawer.creator]
+  );
+
+
+  const openMediaKitForCreator = React.useCallback(
+    (creator: Creator) => {
+      if (isYouTubeCreator(creator)) {
+        const raw = buildDetailPanelRawFromInvitationCreator(creator);
+
+        setReportDrawer({
+          open: true,
+          creator,
+          loading: false,
+          error: null,
+          data: raw,
+          raw,
+          lastFetchedAt: getReportLastFetchedAt(raw),
+          calculationMethod: reportCalculationMethod,
+        });
+        return;
+      }
+
+      void openReportForCreator(creator);
+    },
+    [openReportForCreator, reportCalculationMethod]
+  );
+
+  const getNavigateHref = React.useCallback(
+    (target: NavigateTarget) => {
+      if (target === "dashboard") return "/brand/dashboard";
+
+      if (q === "scheduled-campaign") {
+        return "/brand/campaign/scheduled-campaign";
+      }
+
+      if (q === "active") {
+        return "/brand/campaign/active";
+      }
+
+      return "/brand/campaign/all";
+    },
+    [q]
+  );
+
+  const toggleCreatorSelection = React.useCallback(
+    (creator: Creator, index: number) => {
+      if (bulkCreating) return;
+
+      const keys = creatorKeysForMatching(creator, index);
+      const currentlySelected = isCreatorSelected(selected, creator, index);
+
+      setSelected((prev) => {
+        const next = new Set(prev);
+
+        keys.forEach((key) => {
+          if (currentlySelected) {
+            next.delete(key);
+          } else {
+            next.add(key);
+          }
+        });
+
+        return next;
+      });
+    },
+    [bulkCreating, selected]
+  );
+
+  const handleCreateSelectedAndNavigate = async (target: NavigateTarget) => {
+    if (loading || bulkCreating) return;
+
+    if (target === "dashboard") {
+      router.replace(getNavigateHref("dashboard"));
       return;
     }
 
-    let cancelled = false;
+    try {
+      const brandId = getStoredBrandMongoId();
+      const currentCampaignId = campaignId;
 
-    (async () => {
-      setLoading(true);
-
-      try {
-        const res: any = await apiCampaignGetById2(editCampaignId);
-
-        if (cancelled) return;
-
-        const doc =
-          res?.data?.data ||
-          res?.data?.campaign ||
-          res?.campaign ||
-          res?.data ||
-          res;
-
-        setManualFromCampaign(doc as EnrichedCampaignDoc);
-      } catch (e) {
-        if (cancelled) return;
-
-        toastError(
-          "Failed to load campaign",
-          getBackendErrorMessage(e, "Unable to load campaign details.")
-        );
-      } finally {
-        if (!cancelled) setLoading(false);
+      if (!brandId || !currentCampaignId) {
+        throw new Error("Missing brand _id or campaign _id");
       }
-    })();
 
-    return () => {
-      cancelled = true;
-    };
-  }, [editCampaignId, resolvedBrandId, queryBrandId]);
+      const selectedCreators = creators
+        .map((creator, index) => ({
+          creator,
+          index,
+          id: rowId(creator, index),
+        }))
+        .filter(({ creator, index }) => {
+          return isCreatorSelected(selected, creator, index);
+        });
 
-  if (loading) {
-    return (
-      <>
-        <ToastStyles />
+      if (!selectedCreators.length) {
+        toast({
+          icon: "error",
+          title: "No creators selected",
+          text: "Please select at least one creator before continuing.",
+        });
 
-        <CenterWrap>
-          <div className="w-full max-w-5xl rounded-2xl border border-neutral-200 bg-white p-6">
-            <div className="h-6 w-40 rounded bg-neutral-200" />
-            <div className="mt-3 h-4 w-96 max-w-full rounded bg-neutral-100" />
-            <div className="mt-6 rounded-2xl border border-neutral-200 bg-white p-6">
-              <div className="h-[260px] rounded-xl bg-neutral-100" />
-            </div>
-          </div>
-        </CenterWrap>
-      </>
-    );
-  }
+        return;
+      }
+
+      const pendingCreators = selectedCreators.filter(({ creator, index }) => {
+        return !isCreatorAlreadyInvited(alreadyInvited, creator, index);
+      });
+
+      if (!pendingCreators.length) {
+        toast({
+          icon: "success",
+          title: "Already invited",
+          text: "Selected creators are already invited for this campaign.",
+        });
+
+        return;
+      }
+
+      setBulkCreating(true);
+      setError(null);
+
+      setSending((prev) => {
+        const next = new Set(prev);
+
+        pendingCreators.forEach(({ id }) => {
+          next.add(id);
+        });
+
+        return next;
+      });
+
+      const results = await Promise.allSettled(
+        pendingCreators.map(async ({ creator, index }) => {
+          const keys = await createInvitationForCreator(
+            creator,
+            index,
+            brandId,
+            currentCampaignId
+          );
+
+          return {
+            creator,
+            index,
+            keys,
+          };
+        })
+      );
+
+      const succeeded = results.filter(
+        (
+          result
+        ): result is PromiseFulfilledResult<{
+          creator: Creator;
+          index: number;
+          keys: Set<string>;
+        }> => result.status === "fulfilled"
+      );
+
+      const failed = results.filter((result) => result.status === "rejected");
+
+      if (succeeded.length) {
+        setAlreadyInvited((prev) => {
+          const next = new Set(prev);
+
+          succeeded.forEach(({ value }) => {
+            value.keys.forEach((key) => {
+              next.add(key);
+            });
+          });
+
+          return next;
+        });
+
+        setSelected((prev) => {
+          const next = new Set(prev);
+
+          succeeded.forEach(({ value }) => {
+            value.keys.forEach((key) => {
+              next.add(key);
+            });
+          });
+
+          return next;
+        });
+      }
+
+      if (failed.length) {
+        const message = `${failed.length} invitation${failed.length > 1 ? "s" : ""
+          } failed. Please try again.`;
+
+        setError(message);
+
+        toast({
+          icon: "error",
+          title: "Some invitations failed",
+          text: message,
+        });
+
+        return;
+      }
+
+      setShowConfetti(true);
+
+      window.setTimeout(() => {
+        setShowConfetti(false);
+      }, 2500);
+
+      toast({
+        icon: "success",
+        title: "Invitations sent",
+        text: `${succeeded.length} creator${succeeded.length > 1 ? "s have" : " has"
+          } been invited.`,
+      });
+
+      // Stay on this invite page. Do not redirect to the full campaign list.
+    } catch (err: any) {
+      const message = await getApiErrorMessage(
+        err,
+        "Failed to create invitations"
+      );
+
+      setError(message);
+
+      toast({
+        icon: "error",
+        title: "Unable to continue",
+        text: message,
+      });
+    } finally {
+      setBulkCreating(false);
+
+      setSending((prev) => {
+        const next = new Set(prev);
+
+        creators.forEach((creator, index) => {
+          next.delete(rowId(creator, index));
+        });
+
+        return next;
+      });
+    }
+  };
+
+  const total = creators.length;
+  const recommendationProgressTarget = Math.max(
+    1,
+    recommendationProgress.target || INVITATION_CREATOR_LIMIT
+  );
+  const recommendationProgressPercent = Math.min(
+    100,
+    Math.max(
+      recommendationProgress.active || loading ? 8 : 0,
+      Math.round((total / recommendationProgressTarget) * 100)
+    )
+  );
+  const recommendationProgressKeywords = recommendationProgress.keywords.length
+    ? recommendationProgress.keywords.slice(0, 6)
+    : INVITE_PROGRESS_KEYWORDS;
+
+  const isAnySending = sending.size > 0;
+  const footerDisabled = loading || bulkCreating || isAnySending;
 
   return (
-    <>
-      <ToastStyles />
+    <div className="relative flex h-dvh w-screen flex-col overflow-hidden bg-white">
+      <style jsx global>{`
+        @keyframes creatorRowIn {
+          0% {
+            opacity: 0;
+            transform: translateY(10px);
+          }
+          100% {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
 
-      <CreateManualScreen
-        sidebarOffsetPx={sidebarOffsetPx}
-        formMaxWidth={LAYOUT.manualFormMaxWidth}
-        lists={lists}
-        initialFromCampaign={manualFromCampaign}
-        targetBrandId={resolvedBrandId}
-        isEditMode={Boolean(editCampaignId)}
-        onAfterPublish={() => setManualFromCampaign(null)}
+        .creator-row-animate {
+          animation: creatorRowIn 320ms ease both;
+        }
+      `}</style>
+
+      <div
+        className="pointer-events-none absolute inset-x-0 top-0 h-[500px]"
+        style={{
+          background:
+            "radial-gradient(279.1% 260.1% at 50% -199.66%, rgba(255, 140, 1, 0.62) 61.31%, rgba(255, 191, 0, 0.54) 72.42%, rgba(255, 255, 255, 0.42) 94.53%)",
+          maskImage:
+            "linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,0.78) 54%, rgba(0,0,0,0) 100%)",
+          WebkitMaskImage:
+            "linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,0.78) 54%, rgba(0,0,0,0) 100%)",
+        }}
       />
-    </>
+
+      {mounted && (
+        <div
+          className="pointer-events-none fixed -top-5 left-1/2 z-[9999] w-full max-w-4xl -translate-x-1/2"
+          style={{
+            height: "100px",
+            overflow: "hidden",
+            maxWidth: "20rem",
+          }}
+        >
+          <Confetti
+            isActive={showConfetti}
+            colors={COLORS}
+            particleCount={100}
+          />
+        </div>
+      )}
+
+      <main className="relative z-10 mx-auto flex min-h-0 w-full max-w-[1280px] flex-1 flex-col px-6 pt-10">
+        <div className="mb-5 shrink-0 rounded-lg px-6 py-5 text-center">
+          <h1 className="text-[26px] font-semibold leading-[32px] text-gray-950">
+            Invite Creators to Your Campaign
+          </h1>
+
+          <p className="mx-auto mt-2 max-w-2xl text-[15px] leading-[22px] text-gray-800">
+            Review recommended creators and open each media kit before continuing.
+          </p>
+
+          {error ? (
+            <p className="mx-auto mt-2 max-w-2xl text-sm font-medium text-red-600">
+              {error}
+            </p>
+          ) : null}
+        </div>
+
+        <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg bg-transparent">
+          <div className="min-h-0 flex-1 overflow-y-auto px-1 py-1">
+            {loading && creators.length === 0 ? (
+              <div className="mx-2 mb-3 w-full">
+                <div className="flex items-center justify-between text-[12px] font-medium text-[#8C8C8C]">
+                  <span>{recommendationProgressPercent}%</span>
+                  <span>100%</span>
+                </div>
+
+                <div className="mt-2 h-[3px] w-full overflow-hidden rounded-full bg-[#F1F1F1]">
+                  <div
+                    className="h-full rounded-full bg-[#f5b700] transition-[width] duration-500 ease-out"
+                    style={{ width: `${recommendationProgressPercent}%` }}
+                  />
+                </div>
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {recommendationProgressKeywords.slice(0, 6).map((keyword) => (
+                    <span
+                      key={keyword}
+                      className="rounded-[10px] border border-[#E6E6E6] bg-white px-3 py-1 text-xs font-medium text-[#6F6F6F]"
+                    >
+                      {keyword}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <>
+                {recommendationProgress.active || total > 0 ? (
+                  <div className="mx-2 mb-3 w-full">
+                    <div className="flex items-center justify-between text-[12px] font-medium text-[#8C8C8C]">
+                      <span>{recommendationProgressPercent}%</span>
+                      <span>100%</span>
+                    </div>
+
+                    <div className="mt-2 h-[3px] w-full overflow-hidden rounded-full bg-[#F1F1F1]">
+                      <div
+                        className="h-full rounded-full bg-[#f5b700] transition-[width] duration-500 ease-out"
+                        style={{ width: `${recommendationProgressPercent}%` }}
+                      />
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {recommendationProgressKeywords.slice(0, 6).map((keyword) => (
+                        <span
+                          key={keyword}
+                          className="rounded-[10px] border border-[#E6E6E6] bg-white px-3 py-1 text-xs font-medium text-[#6F6F6F]"
+                        >
+                          {keyword}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                {creators.map((c, index) => {
+                  const id = rowId(c, index);
+                  const isSending = sending.has(id);
+
+                  const name = getCreatorName(c);
+                  const handle = getCreatorHandle(c);
+                  const audienceAuthenticity = getCreatorAudienceAuthenticity(c);
+                  const creatorBio = getCreatorBio(c);
+                  const followers = getCreatorFollowers(c);
+                  const tierLabel = getCreatorTierLabel(c);
+                  const countryLabel = getCreatorCountryLabel(c);
+
+                  return (
+                    <div
+                      key={id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => openMediaKitForCreator(c)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          openMediaKitForCreator(c);
+                        }
+                      }}
+                      className="creator-row-animate relative mx-2 my-1 cursor-pointer rounded-lg bg-white/42 backdrop-blur-[1px] transition-transform duration-200 ease-out will-change-transform hover:scale-[0.992] after:absolute after:bottom-0 after:left-5 after:right-5 after:h-px after:bg-black/5 after:content-[''] last:after:hidden"
+                      style={{
+                        animationDelay: `${Math.min(index * 30, 240)}ms`,
+                        transformOrigin: "center center",
+                      }}
+                    >
+                      <div className="flex min-h-[104px] flex-col gap-4 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:gap-5 sm:px-6">
+                        <div className="flex min-w-0 items-start gap-4">
+                          <CreatorAvatar creator={c} name={name} />
+
+                          <div className="min-w-0 pt-0.5">
+                            <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
+                              <h3 className="truncate text-[18px] font-semibold leading-[24px] text-[#202124] sm:text-[20px] sm:leading-[26px]">
+                                {name}
+                              </h3>
+
+                              {handle ? (
+                                <span className="truncate text-[14px] font-normal leading-[20px] text-[#8E8E8E] sm:text-[15px] sm:leading-[21px]">
+                                  {handle}
+                                </span>
+                              ) : null}
+                            </div>
+
+                            <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[13px] leading-[19px] sm:text-[15px] sm:leading-[21px]">
+                              <span className="font-medium text-[#202124]">
+                                {formatCompact(followers)}
+                              </span>
+
+                              <span className="font-normal text-[#8E8E8E]">
+                                Followers
+                              </span>
+
+                              <span className="text-[#B5B5B5]">·</span>
+
+                              <span className="font-semibold text-[#202124]">
+                                {tierLabel}
+                              </span>
+
+                              <span className="font-normal text-[#8E8E8E]">
+                                Tier
+                              </span>
+
+                              <span className="text-[#B5B5B5]">·</span>
+
+                              <span className="font-medium text-[#202124]">
+                                {countryLabel}
+                              </span>
+
+                              <span className="font-normal text-[#8E8E8E]">
+                                Country
+                              </span>
+
+                            </div>
+
+                            {creatorBio ? (
+                              <div className="mt-1.5 line-clamp-2 max-w-3xl text-[12px] leading-[18px] text-[#8E8E8E]">
+                                {creatorBio}
+                              </div>
+                            ) : null}
+                          </div>
+                        </div>
+
+                        <div className="flex shrink-0 items-center gap-3 self-end sm:self-center">
+                          <div className="hidden min-w-[92px] text-right sm:block">
+                            <p className="text-[10px] font-bold uppercase tracking-wide text-[#9a7a38]">
+                              Authenticity
+                            </p>
+                            <p className={`mt-0.5 text-[20px] font-black leading-none ${getAudienceAuthenticityColorClass(audienceAuthenticity)}`}>
+                              {audienceAuthenticity !== null ? `${audienceAuthenticity}%` : "—"}
+                            </p>
+                          </div>
+
+                          <Button
+                            type="button"
+                            className="inline-flex h-10 items-center gap-2 rounded-full bg-[#202124] px-6 text-[14px] font-semibold text-white hover:bg-[#202124]/90 disabled:opacity-60"
+                            disabled={isSending || bulkCreating}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              openMediaKitForCreator(c);
+                            }}
+                          >
+                            <Eye className="h-4 w-4" />
+                            Media kit
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {!creators.length && !error && !recommendationProgress.active ? (
+                  <div className="grid min-h-[220px] place-items-center p-8 text-center">
+                    <div>
+                      <div className="text-sm font-semibold text-gray-900">
+                        No creators found
+                      </div>
+
+                      <p className="mt-2 text-xs text-gray-500">
+                        No creators were returned from the API for this
+                        campaign.
+                      </p>
+                    </div>
+                  </div>
+                ) : null}
+
+                {!creators.length && error ? (
+                  <div className="grid min-h-[220px] place-items-center p-8 text-center">
+                    <Button
+                      variant="outline"
+                      className="rounded-full border-2 px-8"
+                      onClick={fetchCreators}
+                    >
+                      Try Again
+                    </Button>
+                  </div>
+                ) : null}
+              </>
+            )}
+          </div>
+        </section>
+      </main>
+
+      <footer className="relative z-20 shrink-0 border-t border-black/5 bg-white/60 backdrop-blur-md">
+        <div className="mx-auto flex min-h-14 w-full max-w-[1280px] flex-col gap-3 px-6 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-sm font-bold text-gray-800">
+            {total || 0} creators found
+          </div>
+
+          <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-end sm:gap-6">
+            <Button
+              variant="outline"
+              onClick={() => router.replace(getNavigateHref("dashboard"))}
+              className="border-none shadow-none text-sm text-gray-900 disabled:opacity-50"
+            >
+              Go to Dashboard
+            </Button>
+
+            <Button
+              onClick={() => router.replace("/brand/campaign/all")}
+              className="rounded-lg bg-black px-9 py-2.5 text-sm font-medium text-white disabled:opacity-50"
+              disabled={footerDisabled}
+            >
+              Skip
+            </Button>
+          </div>
+        </div>
+      </footer>
+
+      <ModashReportSideModal
+        drawer={reportDrawer}
+        onClose={closeReportDrawer}
+        onRefresh={refreshCurrentReport}
+        onChangeCalc={handleReportCalcChange}
+        campaignId={campaignId}
+      />
+    </div>
   );
 }

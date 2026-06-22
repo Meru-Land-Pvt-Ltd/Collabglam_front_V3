@@ -169,6 +169,15 @@ type RecommendedCreatorsResponse =
     };
   };
 
+type RecommendationProgressState = {
+  active: boolean;
+  done: boolean;
+  count: number;
+  target: number;
+  keywords: string[];
+  jobId?: string;
+};
+
 type InvitationListResponse = {
   status?: string;
   page?: number;
@@ -823,8 +832,19 @@ function getRecommendedCreators(data: RecommendedCreatorsResponse): Creator[] {
   return [];
 }
 
+function mergeCreatorsTopToBottom(prev: Creator[], next: Creator[]) {
+  const seen = new Set<string>();
+  const merged: Creator[] = [];
 
+  [...prev, ...next].forEach((creator) => {
+    const key = getCreatorIdentityKey(creator);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    merged.push(creator);
+  });
 
+  return merged;
+}
 
 function getExistingInvitations(data: InvitationListResponse): Invitation[] {
   if (Array.isArray(data?.data)) return data.data;
@@ -1092,7 +1112,7 @@ function CreatorAvatar({ creator, name }: { creator: Creator; name: string }) {
 }
 
 
-const INVITE_LOADING_ANIMALS = ["🤖", "⚙️", "💻", "📡", "🛰️", "⚡", "🔍"];
+const INVITE_LOADING_ANIMALS = ["🦊", "🐼", "🦉", "🐰", "🐶", "🐯"];
 const INVITE_LOADING_BACKGROUNDS = ["🎥", "🤝", "📊", "🎯", "✨", "🔎"];
 
 function InviteCreatorLoadingAnimation() {
@@ -1652,6 +1672,17 @@ export default function InfluencerInvitationPage() {
   const [creators, setCreators] = React.useState<Creator[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
+  const [recommendationProgress, setRecommendationProgress] =
+    React.useState<RecommendationProgressState>({
+      active: false,
+      done: false,
+      count: 0,
+      target: INVITATION_CREATOR_LIMIT,
+      keywords: [],
+    });
+  const recommendationPollRef = React.useRef<{ cancelled: boolean } | null>(null);
+  const autoSelectedCreatorKeysRef = React.useRef<Set<string>>(new Set());
+  const creatorsRef = React.useRef<Creator[]>([]);
 
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
   const [alreadyInvited, setAlreadyInvited] = React.useState<Set<string>>(
@@ -1743,6 +1774,11 @@ export default function InfluencerInvitationPage() {
         allowFallbackTier: true,
         fast: true,
         background: false,
+        queue: true,
+        incremental: true,
+        recommendationQueue: true,
+        type: "campaign-recommendation",
+        batchSize: 1,
       };
 
       const response = await api.post<RecommendedCreatorsResponse>(url, body, {
@@ -1753,6 +1789,122 @@ export default function InfluencerInvitationPage() {
     },
     []
   );
+
+  const applyRecommendationResponse = React.useCallback(
+    (data: RecommendedCreatorsResponse, sourceInfo: ResolvedRecommendationSource) => {
+      const anyData = (Array.isArray(data) ? {} : data || {}) as any;
+      const requestedTier = getRequestedTierFromRecommendationResponse(data);
+      const nextList = sortCreatorsForCampaignTier(
+        filterCreatorsForRecommendationSource(getRecommendedCreators(data), sourceInfo),
+        requestedTier
+      );
+
+      setRecommendationProgress({
+        active: Boolean(anyData.processing && !anyData.done),
+        done: Boolean(anyData.done),
+        count: Number(anyData.count ?? anyData.returnedCount ?? nextList.length ?? 0),
+        target: Number(anyData.target ?? anyData.limit ?? INVITATION_CREATOR_LIMIT),
+        keywords: [],
+        jobId: anyData.jobId,
+      });
+
+      const merged = mergeCreatorsTopToBottom(creatorsRef.current, nextList).slice(
+        0,
+        INVITATION_CREATOR_LIMIT
+      );
+      creatorsRef.current = merged;
+      setCreators(merged);
+
+      setSelected((prevSelected) => {
+        const nextSelected = new Set(prevSelected);
+
+        merged.forEach((creator, index) => {
+          const identityKey = getCreatorIdentityKey(creator);
+          if (autoSelectedCreatorKeysRef.current.has(identityKey)) return;
+
+          autoSelectedCreatorKeysRef.current.add(identityKey);
+          creatorKeysForMatching(creator, index).forEach((key) => {
+            nextSelected.add(key);
+          });
+        });
+
+        return nextSelected;
+      });
+
+      return {
+        jobId: String(anyData.jobId || ""),
+        done: Boolean(anyData.done || !anyData.processing),
+      };
+    },
+    []
+  );
+
+  const startRecommendationPolling = React.useCallback(
+    (jobId: string, sourceInfo: ResolvedRecommendationSource) => {
+      if (!jobId) return;
+
+      if (recommendationPollRef.current) {
+        recommendationPollRef.current.cancelled = true;
+      }
+
+      const pollState = { cancelled: false };
+      recommendationPollRef.current = pollState;
+
+      const poll = async () => {
+        for (let attempt = 0; attempt < 600; attempt += 1) {
+          if (pollState.cancelled) return;
+
+          await new Promise((resolve) => window.setTimeout(resolve, 1100));
+          if (pollState.cancelled) return;
+
+          const response = await api.get<RecommendedCreatorsResponse>(
+            "/youtube-data/creators",
+            {
+              params: {
+                jobId,
+                ts: Date.now(),
+              },
+              timeout: 60000,
+            }
+          );
+
+          const status = applyRecommendationResponse(response.data, sourceInfo);
+
+          if (status.done) {
+            setRecommendationProgress((prev) => ({
+              ...prev,
+              active: false,
+              done: true,
+            }));
+            return;
+          }
+        }
+      };
+
+      void poll().catch(async (err) => {
+        if (pollState.cancelled) return;
+
+        const message = await getApiErrorMessage(
+          err,
+          "Failed to refresh creator recommendations"
+        );
+        setError(message);
+        setRecommendationProgress((prev) => ({
+          ...prev,
+          active: false,
+        }));
+      });
+    },
+    [applyRecommendationResponse]
+  );
+
+  React.useEffect(() => {
+    return () => {
+      if (recommendationPollRef.current) {
+        recommendationPollRef.current.cancelled = true;
+      }
+    };
+  }, []);
 
   const fetchCreators = React.useCallback(async () => {
     setLoading(true);
@@ -1781,22 +1933,35 @@ export default function InfluencerInvitationPage() {
       setSending(new Set());
 
       if (sourceInfo.source === "youtube_api") {
-        const finalData = await fetchYouTubeCampaignRecommendations(brandId, campaignId);
-        const requestedTier = getRequestedTierFromRecommendationResponse(finalData);
-        const finalList = sortCreatorsForCampaignTier(
-          filterCreatorsForRecommendationSource(getRecommendedCreators(finalData), sourceInfo),
-          requestedTier
-        );
+        if (recommendationPollRef.current) {
+          recommendationPollRef.current.cancelled = true;
+        }
 
-        const defaultSelected = new Set<string>();
-        finalList.forEach((creator, index) => {
-          creatorKeysForMatching(creator, index).forEach((key) => {
-            defaultSelected.add(key);
-          });
+        autoSelectedCreatorKeysRef.current = new Set();
+        creatorsRef.current = [];
+        setCreators([]);
+        setSelected(new Set());
+        setRecommendationProgress({
+          active: true,
+          done: false,
+          count: 0,
+          target: INVITATION_CREATOR_LIMIT,
+          keywords: [],
         });
 
-        setCreators(finalList);
-        setSelected(defaultSelected);
+        const firstData = await fetchYouTubeCampaignRecommendations(brandId, campaignId);
+        const status = applyRecommendationResponse(firstData, sourceInfo);
+
+        if (status.jobId && !status.done) {
+          startRecommendationPolling(status.jobId, sourceInfo);
+        } else {
+          setRecommendationProgress((prev) => ({
+            ...prev,
+            active: false,
+            done: true,
+          }));
+        }
+
         return;
       }
 
@@ -1827,16 +1992,32 @@ export default function InfluencerInvitationPage() {
         });
       });
 
+      setRecommendationProgress((prev) => ({
+        ...prev,
+        active: false,
+        done: true,
+        count: list.length,
+        target: list.length || INVITATION_CREATOR_LIMIT,
+      }));
+      creatorsRef.current = list;
       setCreators(list);
       setSelected(defaultSelected);
     } catch (e: any) {
       const message = await getApiErrorMessage(e, "Failed to load creators");
 
       setError(message);
+      creatorsRef.current = [];
       setCreators([]);
       setAlreadyInvited(new Set());
       setSelected(new Set());
       setSending(new Set());
+      setRecommendationProgress({
+        active: false,
+        done: false,
+        count: 0,
+        target: INVITATION_CREATOR_LIMIT,
+        keywords: [],
+      });
 
       toast({
         icon: "error",
@@ -1846,7 +2027,13 @@ export default function InfluencerInvitationPage() {
     } finally {
       setLoading(false);
     }
-  }, [campaignId, fetchExistingInvitations, fetchYouTubeCampaignRecommendations]);
+  }, [
+    campaignId,
+    fetchExistingInvitations,
+    fetchYouTubeCampaignRecommendations,
+    applyRecommendationResponse,
+    startRecommendationPolling,
+  ]);
 
   React.useEffect(() => {
     fetchCreators();
@@ -2321,7 +2508,27 @@ export default function InfluencerInvitationPage() {
   };
 
   const total = creators.length;
-
+  const recommendationProgressTarget = Math.max(
+    1,
+    recommendationProgress.target || INVITATION_CREATOR_LIMIT
+  );
+  const recommendationProgressCount = Math.max(
+    0,
+    Math.min(
+      recommendationProgressTarget,
+      Number(recommendationProgress.count || creators.length || 0)
+    )
+  );
+  const recommendationProgressPercent = Math.min(
+    100,
+    Math.max(
+      recommendationProgress.active || loading ? 8 : 0,
+      Math.round((recommendationProgressCount / recommendationProgressTarget) * 100)
+    )
+  );
+  const showRecommendationProgress = Boolean(
+    loading || (recommendationProgress.active && !recommendationProgress.done)
+  );
   const isAnySending = sending.size > 0;
   const footerDisabled = loading || bulkCreating || isAnySending;
 
@@ -2393,12 +2600,36 @@ export default function InfluencerInvitationPage() {
         <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg bg-transparent">
           <div className="min-h-0 flex-1 overflow-y-auto px-1 py-1">
             {loading && creators.length === 0 ? (
-              <InviteCreatorLoadingAnimation />
+              showRecommendationProgress ? (
+                <div className="mx-2 mb-3 w-full">
+                  <div className="flex items-center justify-between text-[12px] font-medium text-[#9B9B9B]">
+                    <span>{recommendationProgressCount}</span>
+                    <span>{recommendationProgressTarget}</span>
+                  </div>
+
+                  <div className="mt-3 h-px w-full overflow-hidden rounded-full bg-[#E6E6E6]">
+                    <div
+                      className="h-full rounded-full bg-[#111111] transition-[width] duration-500 ease-out"
+                      style={{ width: `${recommendationProgressPercent}%` }}
+                    />
+                  </div>
+                </div>
+              ) : null
             ) : (
               <>
-                {loading && creators.length > 0 ? (
-                  <div className="mx-2 mb-3 rounded-lg border border-[#efe8dd] bg-[#fffaf0] px-4 py-3 text-sm font-medium text-[#7a5a16]">
-                    Refreshing accurate creator recommendations...
+                {showRecommendationProgress ? (
+                  <div className="mx-2 mb-3 w-full">
+                    <div className="flex items-center justify-between text-[12px] font-medium text-[#9B9B9B]">
+                      <span>{recommendationProgressCount}</span>
+                      <span>{recommendationProgressTarget}</span>
+                    </div>
+
+                    <div className="mt-3 h-px w-full overflow-hidden rounded-full bg-[#E6E6E6]">
+                      <div
+                        className="h-full rounded-full bg-[#111111] transition-[width] duration-500 ease-out"
+                        style={{ width: `${recommendationProgressPercent}%` }}
+                      />
+                    </div>
                   </div>
                 ) : null}
                 {creators.map((c, index) => {
@@ -2490,7 +2721,7 @@ export default function InfluencerInvitationPage() {
                         <div className="flex shrink-0 items-center gap-3 self-end sm:self-center">
                           <div className="hidden min-w-[92px] text-right sm:block">
                             <p className="text-[10px] font-bold uppercase tracking-wide text-[#9a7a38]">
-                              Audience Authenticity
+                              Authenticity
                             </p>
                             <p className={`mt-0.5 text-[20px] font-black leading-none ${getAudienceAuthenticityColorClass(audienceAuthenticity)}`}>
                               {audienceAuthenticity !== null ? `${audienceAuthenticity}%` : "—"}
@@ -2507,7 +2738,7 @@ export default function InfluencerInvitationPage() {
                             }}
                           >
                             <Eye className="h-4 w-4" />
-                            Insights
+                            Media kit
                           </Button>
                         </div>
                       </div>
@@ -2515,7 +2746,7 @@ export default function InfluencerInvitationPage() {
                   );
                 })}
 
-                {!creators.length && !error ? (
+                {!creators.length && !error && !recommendationProgress.active ? (
                   <div className="grid min-h-[220px] place-items-center p-8 text-center">
                     <div>
                       <div className="text-sm font-semibold text-gray-900">

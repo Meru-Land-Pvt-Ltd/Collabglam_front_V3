@@ -226,7 +226,10 @@ type Pagination = {
   hasPrevPage: boolean;
 };
 
+type SearchMode = "channel" | "script";
+
 type Filters = {
+  searchMode: SearchMode;
   keyword: string;
   category: string;
   subscriberTier: string;
@@ -247,8 +250,40 @@ type CountryOption = {
   flag?: string;
 };
 
+type CreatorQueueStatus = {
+  jobId: string;
+  processing: boolean;
+  done: boolean;
+  count: number;
+  totalFound: number;
+  target: number;
+  message: string;
+};
+
+type YouTubeCreatorsApiResponse = {
+  success?: boolean;
+  mode?: string;
+  jobId?: string;
+  processing?: boolean;
+  done?: boolean;
+  count?: number;
+  totalFound?: number;
+  target?: number;
+  warning?: string;
+  error?: string;
+  data?: YouTubeCreator[];
+  creators?: YouTubeCreator[];
+  recommendations?: YouTubeCreator[];
+  recommendedCreators?: YouTubeCreator[];
+};
+
 function getRuntimeApiBaseUrl() {
-  const explicit = String(process.env.NEXT_PUBLIC_API_URL || "").trim();
+  const explicit = String(
+    process.env.NEXT_PUBLIC_API_URL ||
+      process.env.NEXT_PUBLIC_API_URL ||
+      "",
+  ).trim();
+
   if (explicit) return explicit;
 
   if (typeof window !== "undefined") {
@@ -302,6 +337,7 @@ function wait(ms: number) {
 }
 
 const defaultFilters: Filters = {
+  searchMode: "channel",
   keyword: "",
   category: "",
   subscriberTier: "",
@@ -314,6 +350,42 @@ const defaultFilters: Filters = {
   page: 1,
   limit: FRONTEND_PAGE_SIZE,
 };
+
+function normalizeSearchMode(value?: string | null): SearchMode {
+  return String(value || "").toLowerCase() === "script" ? "script" : "channel";
+}
+
+function getSearchInputPlaceholder(mode: SearchMode) {
+  if (mode === "channel") {
+    return "Search for creators, username and";
+  }
+
+  return "Search for creators, username and";
+}
+
+function getSearchModeApiFlags(mode?: SearchMode | string | null) {
+  const searchMode = normalizeSearchMode(mode);
+  const isChannelSearch = searchMode === "channel";
+
+  return {
+    searchMode,
+    source: isChannelSearch ? "youtube_api" : "app_script",
+    useScript: isChannelSearch ? "false" : "true",
+    skipScript: isChannelSearch ? "true" : "false",
+    skipAppsScript: isChannelSearch ? "true" : "false",
+    channelSearch: isChannelSearch ? "true" : "false",
+    scriptSearch: isChannelSearch ? "false" : "true",
+    fast: isChannelSearch ? "true" : "false",
+    background: isChannelSearch ? "false" : "true",
+    nonBlocking: isChannelSearch ? "false" : "true",
+    forceBackground: isChannelSearch ? "false" : "true",
+    directChannelSearch: isChannelSearch ? "true" : "false",
+    queue: isChannelSearch ? "false" : "true",
+    incremental: isChannelSearch ? "false" : "true",
+    strictCountry: "false",
+    batchSize: isChannelSearch ? "" : "1",
+  };
+}
 
 const BROWSE_STATE_CACHE_KEY = "collabglam.youtubeBrowseState.v1";
 const BROWSE_STATE_TTL_MS = 30 * 60 * 1000;
@@ -415,6 +487,13 @@ const SUBSCRIBER_TIERS = [
 ];
 
 const allowedParams = [
+  "searchMode",
+  "source",
+  "useScript",
+  "skipScript",
+  "skipAppsScript",
+  "channelSearch",
+  "scriptSearch",
   "keyword",
   "category",
   "subscriberTier",
@@ -431,6 +510,11 @@ const allowedParams = [
   "nonBlocking",
   "forceBackground",
   "minimumResults",
+  "queue",
+  "incremental",
+  "batchSize",
+  "jobId",
+  "directChannelSearch",
 ];
 
 function getApiUrl(path: string) {
@@ -1040,9 +1124,9 @@ function doesCreatorMatchSelectedCountry(
   const selectedCountry = normalizeCountryCode(country);
   if (!selectedCountry) return true;
 
-  // Country filter must be exact. Do not use estimated audience country here,
-  // otherwise US filter can still show channels with another/unknown channel country.
-  return getCreatorActualCountryCode(creator) === selectedCountry;
+  const actualCountry = getCreatorActualCountryCode(creator);
+  const estimatedCountry = normalizeCountryCode(creator.estimatedAudienceCountry);
+  return actualCountry === selectedCountry || estimatedCountry === selectedCountry;
 }
 
 function getCreatorsForSelectedFilters(
@@ -1053,18 +1137,17 @@ function getCreatorsForSelectedFilters(
   const selectedCountry = normalizeCountryCode(filters.country);
   const sorted = sortCreatorsBySubscribersDesc(creators);
 
-  const countryFiltered = selectedCountry
-    ? sorted.filter((creator) =>
-        doesCreatorMatchSelectedCountry(creator, selectedCountry),
-      )
+  // Country filter is exact. If user selects Japan, only Japan creators should show.
+  const countryPreferred = selectedCountry
+    ? sorted.filter((creator) => doesCreatorMatchSelectedCountry(creator, selectedCountry))
     : sorted;
 
-  if (!selectedTier) return countryFiltered;
+  if (!selectedTier) return countryPreferred;
 
   const selectedTierCreators: YouTubeCreator[] = [];
   const otherTierCreators: YouTubeCreator[] = [];
 
-  countryFiltered.forEach((creator) => {
+  countryPreferred.forEach((creator) => {
     if (doesCreatorMatchSelectedTier(creator, selectedTier)) {
       selectedTierCreators.push(creator);
     } else {
@@ -1127,7 +1210,7 @@ function buildCleanParams(
 async function fetchYouTubeCreators(
   filters: Partial<Filters> & Record<string, unknown>,
   campaignId?: string,
-) {
+): Promise<YouTubeCreatorsApiResponse> {
   const params = buildCleanParams(filters, campaignId);
   const res = await fetch(
     getApiUrl(`/youtube-data/creators?${params.toString()}`),
@@ -1141,6 +1224,100 @@ async function fetchYouTubeCreators(
     throw new Error(data.error || "Failed to load YouTube creators");
   }
   return data;
+}
+
+async function fetchYouTubeCreatorQueue(jobId: string): Promise<YouTubeCreatorsApiResponse> {
+  const params = new URLSearchParams({ jobId });
+  const res = await fetch(getApiUrl(`/youtube-data/creators?${params.toString()}`), {
+    method: "GET",
+    credentials: "include",
+  });
+  const data = await res.json().catch(() => ({}));
+
+  if (!res.ok || data.success === false) {
+    throw new Error(data.error || "Failed to load queued creators");
+  }
+
+  return data;
+}
+
+function getCreatorsFromApiResponse(response: YouTubeCreatorsApiResponse | null | undefined): YouTubeCreator[] {
+  if (!response) return [];
+
+  if (Array.isArray(response.data)) return response.data;
+  if (Array.isArray(response.creators)) return response.creators;
+  if (Array.isArray(response.recommendations)) return response.recommendations;
+  if (Array.isArray(response.recommendedCreators)) return response.recommendedCreators;
+
+  return [];
+}
+
+function getQueueStatusFromResponse(response: YouTubeCreatorsApiResponse): CreatorQueueStatus | null {
+  const jobId = String(response.jobId || "").trim();
+  if (!jobId) return null;
+
+  const count = getCreatorsFromApiResponse(response).length;
+  const totalFound = Number(response.totalFound || count || 0);
+  const target = Number(response.target || BROWSE_MIN_RESULTS);
+  const processing = Boolean(response.processing);
+  const done = Boolean(response.done) || !processing;
+
+  return {
+    jobId,
+    processing,
+    done,
+    count,
+    totalFound,
+    target,
+    message: done
+      ? `${count} creator${count === 1 ? "" : "s"} ready.`
+      : count > 0
+        ? `${count} creator${count === 1 ? "" : "s"} found so far.`
+        : "Finding the first creator match.",
+  };
+}
+
+function getCreatorQueueKey(creator: YouTubeCreator) {
+  return String(
+    creator.channelId ||
+      creator.channelUrl ||
+      creator.channelName ||
+      creator.thumbnail ||
+      Math.random(),
+  )
+    .trim()
+    .toLowerCase();
+}
+
+function mergeCreatorsTopToBottom(
+  previousCreators: YouTubeCreator[],
+  incomingCreators: YouTubeCreator[],
+) {
+  if (!incomingCreators.length) return previousCreators;
+
+  const seen = new Set(previousCreators.map(getCreatorQueueKey));
+  const merged = [...previousCreators];
+
+  incomingCreators.forEach((creator) => {
+    const key = getCreatorQueueKey(creator);
+    if (!key || seen.has(key)) return;
+
+    seen.add(key);
+    merged.push(creator);
+  });
+
+  return merged;
+}
+
+function getQueueProgressPercent(status?: CreatorQueueStatus | null) {
+  if (!status) return 0;
+
+  const target = Math.max(1, Number(status.target || BROWSE_MIN_RESULTS));
+  const count = Math.max(0, Number(status.count || 0));
+
+  if (status.done && count > 0) return 100;
+
+  return Math.max(4, Math.min(100, Math.round((count / target) * 100)));
 }
 
 async function fetchCountryOptions() {
@@ -1330,6 +1507,291 @@ function buildDetailPanelRawFromYouTubeCreator(creator?: YouTubeCreator | null) 
   };
 }
 
+function normalizeBookmarkKey(value?: string | number | null) {
+  return String(value || "")
+    .trim()
+    .toLowerCase();
+}
+
+function addBookmarkKey(keys: string[], value?: string | number | null) {
+  const key = normalizeBookmarkKey(value);
+  if (key && !keys.includes(key)) keys.push(key);
+}
+
+function getCreatorBookmarkKeys(creator?: YouTubeCreator | null) {
+  if (!creator) return [];
+
+  const keys: string[] = [];
+  const channelId = String(creator.channelId || "").trim();
+  const channelUrl = String(creator.channelUrl || "").trim();
+  const handle = getCreatorHandleLabel(creator).replace(/^@/, "");
+
+  addBookmarkKey(keys, channelId);
+  addBookmarkKey(keys, (creator as any).youtubeChannelId);
+  addBookmarkKey(keys, (creator as any).creatorId);
+  addBookmarkKey(keys, (creator as any).influencerId);
+  addBookmarkKey(keys, (creator as any).userId);
+  addBookmarkKey(keys, (creator as any).modashId);
+  addBookmarkKey(keys, channelUrl);
+  addBookmarkKey(keys, channelUrl.replace(/^https?:\/\/(www\.)?youtube\.com\/@/i, "@"));
+  addBookmarkKey(keys, handle);
+  addBookmarkKey(keys, `@${handle}`);
+  addBookmarkKey(keys, creator.channelName);
+
+  return keys;
+}
+
+function getCreatorBookmarkKey(creator?: YouTubeCreator | null) {
+  return getCreatorBookmarkKeys(creator)[0] || "";
+}
+
+function getBookmarkProfileKeys(profile: any) {
+  const keys: string[] = [];
+  const raw = profile?.raw || {};
+
+  addBookmarkKey(keys, profile?.profileKey);
+  addBookmarkKey(keys, profile?.channelId);
+  addBookmarkKey(keys, profile?.youtubeChannelId);
+  addBookmarkKey(keys, profile?.influencerId);
+  addBookmarkKey(keys, profile?.creatorId);
+  addBookmarkKey(keys, profile?.userId);
+  addBookmarkKey(keys, profile?.modashId);
+  addBookmarkKey(keys, profile?.primaryLink);
+  addBookmarkKey(keys, profile?.profileUrl);
+  addBookmarkKey(keys, profile?.url);
+  addBookmarkKey(keys, profile?.handle);
+  addBookmarkKey(keys, profile?.username);
+  addBookmarkKey(keys, profile?.name);
+  addBookmarkKey(keys, profile?.fullname);
+
+  addBookmarkKey(keys, raw?.channelId);
+  addBookmarkKey(keys, raw?.youtubeChannelId);
+  addBookmarkKey(keys, raw?.creatorId);
+  addBookmarkKey(keys, raw?.influencerId);
+  addBookmarkKey(keys, raw?.userId);
+  addBookmarkKey(keys, raw?.modashId);
+  addBookmarkKey(keys, raw?.channelUrl);
+  addBookmarkKey(keys, raw?.channelName);
+
+  if (Array.isArray(profile?.links)) {
+    profile.links.forEach((link: string) => addBookmarkKey(keys, link));
+  }
+
+  return keys;
+}
+
+function extractBookmarkProfiles(data: any): any[] {
+  if (Array.isArray(data)) return data;
+
+  const directCandidates = [
+    data?.data,
+    data?.items,
+    data?.bookmarks,
+    data?.profiles,
+    data?.influencers,
+    data?.data?.items,
+    data?.data?.bookmarks,
+    data?.data?.profiles,
+    data?.data?.influencers,
+    data?.data?.folder?.items,
+    data?.data?.folder?.bookmarks,
+    data?.folder?.items,
+    data?.folder?.bookmarks,
+  ];
+
+  for (const candidate of directCandidates) {
+    if (Array.isArray(candidate)) return candidate;
+  }
+
+  const nestedFolders = [data?.data?.folders, data?.folders].find(Array.isArray);
+  if (Array.isArray(nestedFolders)) {
+    return nestedFolders.flatMap((folder: any) => {
+      if (Array.isArray(folder?.items)) return folder.items;
+      if (Array.isArray(folder?.bookmarks)) return folder.bookmarks;
+      return [];
+    });
+  }
+
+  return [];
+}
+
+function buildBookmarkProfilePayload(
+  creator: YouTubeCreator,
+  filters: Partial<Filters> = {},
+  brandId?: string,
+) {
+  const channelId = String(creator.channelId || "").trim();
+  const channelName = String(creator.channelName || "Creator").trim();
+  const handle = getCreatorHandleLabel(creator).replace(/^@/, "");
+  const profileUrl =
+    creator.channelUrl ||
+    (channelId ? `https://www.youtube.com/channel/${channelId}` : "");
+  const categories = Array.from(
+    new Set(
+      [creator.category, creator.channelCategory, filters.category]
+        .map((item) => String(item || "").trim())
+        .filter(Boolean),
+    ),
+  );
+
+  return {
+    brandId: String(brandId || "").trim() || undefined,
+    profile: {
+      influencerId: channelId,
+      creatorId: channelId,
+      userId: channelId,
+      modashId: channelId,
+      name: channelName,
+      fullname: channelName,
+      username: handle,
+      handle,
+      provider: "youtube",
+      platform: "youtube",
+      country: creator.country || creator.estimatedAudienceCountry || "",
+      location: creator.estimatedAudienceCountry || creator.country || "",
+      categories,
+      niche: categories,
+      followers: getSubs(creator),
+      followerCount: getSubs(creator),
+      subscribers: getSubs(creator),
+      engagementRate: Number(creator.engagementRate || 0),
+      engagements: Number(creator.avgLikes || 0) + Number(creator.avgComments || 0),
+      averageViews: Number(creator.avgViews || 0),
+      avgViews: Number(creator.avgViews || 0),
+      primaryLink: profileUrl,
+      profileUrl,
+      url: profileUrl,
+      links: profileUrl ? [profileUrl] : [],
+      picture: creator.thumbnail || "",
+      avatarUrl: creator.thumbnail || "",
+      profileImage: creator.thumbnail || "",
+      bio: creator.description || creator.channelDescription || "",
+      description: creator.channelDescription || creator.description || "",
+      isVerified: true,
+      verified: true,
+      isPrivate: false,
+      searchType: filters.searchMode || "channel",
+      source: "youtube_browse",
+      raw: creator,
+    },
+  };
+}
+
+function getStoredAuthToken() {
+  if (typeof window === "undefined") return "";
+
+  const directKeys = [
+    "brandToken",
+    "brandAuthToken",
+    "authToken",
+    "accessToken",
+    "token",
+    "jwt",
+    "userToken",
+  ];
+
+  for (const key of directKeys) {
+    const value = window.localStorage.getItem(key);
+    if (value && value.trim()) return value.trim();
+  }
+
+  const jsonKeys = ["brand", "brandUser", "user", "auth", "authUser"];
+  for (const key of jsonKeys) {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) continue;
+
+    try {
+      const parsed = JSON.parse(raw);
+      const value =
+        parsed?.token ||
+        parsed?.accessToken ||
+        parsed?.authToken ||
+        parsed?.jwt ||
+        parsed?.data?.token ||
+        parsed?.data?.accessToken;
+
+      if (value && String(value).trim()) return String(value).trim();
+    } catch {
+      // Ignore non-JSON localStorage values.
+    }
+  }
+
+  return "";
+}
+
+function buildAuthHeaders(brandId?: string) {
+  const token = getStoredAuthToken();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+
+  if (token) {
+    headers.Authorization = token.toLowerCase().startsWith("bearer ")
+      ? token
+      : `Bearer ${token}`;
+  }
+
+  if (brandId) {
+    headers["x-brand-id"] = brandId;
+  }
+
+  return headers;
+}
+
+async function fetchBookmarkedProfileKeys(brandId?: string) {
+  const token = getStoredAuthToken();
+
+  if (!token) {
+    return new Set<string>();
+  }
+
+  const res = await fetch(getApiUrl("/brand/bookmark/profile"), {
+    method: "GET",
+    credentials: "include",
+    headers: buildAuthHeaders(brandId),
+  });
+
+  const data = await res.json().catch(() => ({}));
+
+  if (!res.ok || data.success === false) {
+    throw new Error(data.error || data.message || "Failed to load bookmarked profiles");
+  }
+
+  const keys = new Set<string>();
+  extractBookmarkProfiles(data).forEach((profile) => {
+    getBookmarkProfileKeys(profile).forEach((key) => keys.add(key));
+  });
+
+  return keys;
+}
+
+async function addBookmarkProfileRequest(
+  creator: YouTubeCreator,
+  filters: Partial<Filters>,
+  brandId?: string,
+) {
+  const token = getStoredAuthToken();
+
+  if (!token) {
+    throw new Error("Authorization token missing. Please log in again.");
+  }
+
+  const res = await fetch(getApiUrl("/brand/bookmark/profile"), {
+    method: "POST",
+    credentials: "include",
+    headers: buildAuthHeaders(brandId),
+    body: JSON.stringify(buildBookmarkProfilePayload(creator, filters, brandId)),
+  });
+
+  const data = await res.json().catch(() => ({}));
+
+  if (!res.ok || data.success === false) {
+    throw new Error(data.error || data.message || "Failed to bookmark profile");
+  }
+
+  return data;
+}
+
 function MiniStatCard({
   icon,
   label,
@@ -1500,7 +1962,7 @@ function MediaKitDrawer({
             onClick={onClose}
             className="flex h-11 w-11 items-center justify-center rounded-full bg-[#fff3d5] text-black"
           >
-            <X className="h-5 w-5" />
+            <X className="h-[18px] w-[18px]" />
           </button>
         </div>
 
@@ -1533,7 +1995,7 @@ function MediaKitDrawer({
                     <p className="mt-1 text-sm text-white/80">
                       {overview?.creatorTier || getCreatorTierLabel(creator)} · {overview?.category || creator.category || creator.channelCategory || "YouTube Creator"} · {overview?.primaryLanguage || creator.primaryLanguage || "Language unknown"}
                     </p>
-                    <div className="mt-3 flex flex-wrap gap-2">
+                    <div className="mt-4 flex flex-wrap gap-2">
                       <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-semibold">{overview?.estimatedAudienceCountry || overview?.country || creator.country || "Audience unknown"}</span>
                       {overview?.activeSinceLabel ? <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-semibold">{overview.activeSinceLabel}</span> : null}
                       <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-semibold">YouTube</span>
@@ -1562,7 +2024,7 @@ function MediaKitDrawer({
               <ScoreCard icon={<Target className="h-4 w-4" />} label="Campaign Fit" value={scores?.campaignFitScore} />
             </div>
 
-            <KitSection title="Who Watches This Creator" icon={<Users className="h-5 w-5" />} className="mt-5">
+            <KitSection title="Who Watches This Creator" icon={<Users className="h-[18px] w-[18px]" />} className="mt-5">
               <div className="grid gap-6 md:grid-cols-[1.2fr_1fr_0.8fr]">
                 <div>
                   <p className="mb-3 text-xs font-bold uppercase text-[#9a8a73]">Top audience countries</p>
@@ -1597,7 +2059,7 @@ function MediaKitDrawer({
               </div>
             </KitSection>
 
-            <KitSection title="Reach & Consistency" icon={<TrendingUp className="h-5 w-5" />} className="mt-5">
+            <KitSection title="Reach & Consistency" icon={<TrendingUp className="h-[18px] w-[18px]" />} className="mt-5">
               <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
                 <MiniStatCard icon={<Users className="h-4 w-4" />} label="Subscribers" value={formatNumber(metrics?.subscribers)} />
                 <MiniStatCard icon={<Eye className="h-4 w-4" />} label="Average views" value={formatNumber(metrics?.avgViews)} />
@@ -1610,7 +2072,7 @@ function MediaKitDrawer({
               </div>
             </KitSection>
 
-            <KitSection title="Our Recommendation" icon={<Sparkles className="h-5 w-5" />} className="mt-5 bg-[#fff8e6]">
+            <KitSection title="Our Recommendation" icon={<Sparkles className="h-[18px] w-[18px]" />} className="mt-5 bg-[#fff8e6]">
               <div className="grid gap-5 md:grid-cols-[0.8fr_1.2fr]">
                 <div>
                   <span className="inline-flex items-center gap-2 rounded-full bg-[#dcfce7] px-3 py-1 text-xs font-bold text-[#166534]">
@@ -1637,7 +2099,7 @@ function MediaKitDrawer({
               </div>
             </KitSection>
 
-            <KitSection title="Content Breakdown" icon={<PlayCircle className="h-5 w-5" />} className="mt-5">
+            <KitSection title="Content Breakdown" icon={<PlayCircle className="h-[18px] w-[18px]" />} className="mt-5">
               <div className="grid gap-6 md:grid-cols-[0.8fr_1.2fr]">
                 <div className="flex flex-col items-center justify-center">
                   <div
@@ -1671,7 +2133,7 @@ function MediaKitDrawer({
               </div>
             </KitSection>
 
-            <KitSection title="Brand Partnership Track Record" icon={<Award className="h-5 w-5" />} className="mt-5">
+            <KitSection title="Brand Partnership Track Record" icon={<Award className="h-[18px] w-[18px]" />} className="mt-5">
               <div className="grid gap-4 md:grid-cols-3">
                 <MiniStatCard icon={<Award className="h-4 w-4" />} label="Sponsored videos" value={sponsorship?.sponsoredVideosDetected || 0} />
                 <MiniStatCard icon={<BarChart3 className="h-4 w-4" />} label="Sponsorship frequency" value={`${sponsorship?.sponsorshipFrequency || 0}%`} />
@@ -1711,7 +2173,7 @@ function MediaKitDrawer({
               </div>
             </section>
 
-            <KitSection title="Proof of Performance" icon={<BarChart3 className="h-5 w-5" />} className="mt-5">
+            <KitSection title="Proof of Performance" icon={<BarChart3 className="h-[18px] w-[18px]" />} className="mt-5">
               <div className="divide-y divide-[#f1e2c2]">
                 {(topVideos || []).slice(0, 5).map((video) => (
                   <div key={video.title} className="grid grid-cols-[1fr_100px_100px] items-center gap-3 py-3 text-sm">
@@ -1729,7 +2191,7 @@ function MediaKitDrawer({
             <section className="mt-5 rounded-[26px] bg-gradient-to-br from-[#7c4a03] via-[#d97706] to-[#facc15] p-6 text-white shadow-sm">
               <div className="grid gap-6 md:grid-cols-[1fr_1fr]">
                 <div>
-                  <div className="flex items-center gap-2"><TrendingUp className="h-5 w-5" /><h4 className="text-[18px] font-bold">Predicted Campaign Impact</h4></div>
+                  <div className="flex items-center gap-2"><TrendingUp className="h-[18px] w-[18px]" /><h4 className="text-[18px] font-bold">Predicted Campaign Impact</h4></div>
                   <p className="mt-5 text-[30px] font-black">{formatNumber(prediction?.expectedViewsLow)} - {formatNumber(prediction?.expectedViewsHigh)}</p>
                   <p className="text-sm text-white/80">Predicted views based on recent performance</p>
                   <p className="mt-5 text-[26px] font-black">{formatNumber(prediction?.expectedEngagementLow)} - {formatNumber(prediction?.expectedEngagementHigh)}</p>
@@ -1751,7 +2213,7 @@ function MediaKitDrawer({
             </section>
 
             {hasContact ? (
-              <KitSection title="Contact & Actions" icon={<Lock className="h-5 w-5" />} className="mt-5">
+              <KitSection title="Contact & Actions" icon={<Lock className="h-[18px] w-[18px]" />} className="mt-5">
                 <div className="rounded-[18px] border border-[#f1e2c2] bg-[#fffaf0] p-4">
                   {frontendMaskedEmail ? (
                     <div className="flex items-center gap-3 text-sm font-semibold text-black"><Mail className="h-4 w-4 text-[#9a6500]" /> {frontendMaskedEmail}</div>
@@ -1795,6 +2257,7 @@ export default function YouTubeBrowse() {
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const [showTierDropdown, setShowTierDropdown] = useState(false);
   const [showCountryDropdown, setShowCountryDropdown] = useState(false);
+  const [showSearchModeDropdown, setShowSearchModeDropdown] = useState(false);
   const [countrySearch, setCountrySearch] = useState("");
   const [countries, setCountries] = useState<CountryOption[]>([]);
   const [countriesLoading, setCountriesLoading] = useState(false);
@@ -1802,10 +2265,15 @@ export default function YouTubeBrowse() {
   const [loading, setLoading] = useState(false);
   const [warning, setWarning] = useState("");
   const [error, setError] = useState("");
+  const [queueStatus, setQueueStatus] = useState<CreatorQueueStatus | null>(null);
+  const [bookmarkedKeys, setBookmarkedKeys] = useState<Set<string>>(() => new Set());
+  const [bookmarkingKeys, setBookmarkingKeys] = useState<Set<string>>(() => new Set());
+  const scriptQueueRunRef = useRef(0);
   const categoryDropdownRef = useRef<HTMLDivElement | null>(null);
   const filterDropdownRef = useRef<HTMLDivElement | null>(null);
   const tierDropdownRef = useRef<HTMLDivElement | null>(null);
   const countryDropdownRef = useRef<HTMLDivElement | null>(null);
+  const searchModeDropdownRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1843,6 +2311,28 @@ export default function YouTubeBrowse() {
   }, [brandIdFromQuery]);
 
   useEffect(() => {
+    let mounted = true;
+
+    async function loadBookmarkedProfiles() {
+      const currentBrandId = brandId || getBrandIdFromStorage();
+      if (!currentBrandId || !getStoredAuthToken()) return;
+
+      try {
+        const keys = await fetchBookmarkedProfileKeys(currentBrandId);
+        if (mounted) setBookmarkedKeys(keys);
+      } catch {
+        // Bookmark prefill should never block creator discovery.
+      }
+    }
+
+    loadBookmarkedProfiles();
+
+    return () => {
+      mounted = false;
+    };
+  }, [brandId]);
+
+  useEffect(() => {
     if (!showMoreFilters || countries.length) return;
 
     let mounted = true;
@@ -1866,6 +2356,40 @@ export default function YouTubeBrowse() {
       mounted = false;
     };
   }, [showMoreFilters, countries.length]);
+
+  async function handleBookmarkCreator(creator: YouTubeCreator) {
+    const keys = getCreatorBookmarkKeys(creator);
+    const primaryKey = keys[0];
+    const isAlreadyBookmarked = keys.some((key) => bookmarkedKeys.has(key));
+    const isAlreadyBookmarking = keys.some((key) => bookmarkingKeys.has(key));
+
+    if (!primaryKey || isAlreadyBookmarking || isAlreadyBookmarked) return;
+
+    try {
+      setBookmarkingKeys((current) => {
+        const next = new Set(current);
+        keys.forEach((key) => next.add(key));
+        return next;
+      });
+      setWarning("");
+
+      await addBookmarkProfileRequest(creator, filters, brandId);
+
+      setBookmarkedKeys((current) => {
+        const next = new Set(current);
+        keys.forEach((key) => next.add(key));
+        return next;
+      });
+    } catch (err: any) {
+      setWarning(err?.message || "Failed to bookmark profile");
+    } finally {
+      setBookmarkingKeys((current) => {
+        const next = new Set(current);
+        keys.forEach((key) => next.delete(key));
+        return next;
+      });
+    }
+  }
 
   function openMediaKitPage(creator: YouTubeCreator) {
     const channelId = String(creator.channelId || "").trim();
@@ -1919,10 +2443,13 @@ export default function YouTubeBrowse() {
     return rows.slice(0, 120);
   }, [countries, countrySearch]);
 
-  const sortedCreators = useMemo(
-    () => sortCreatorsForSelectedFilters(allCreators, filters),
-    [allCreators, filters.subscriberTier, filters.country, filters.sort],
-  );
+  const sortedCreators = useMemo(() => {
+    if (filters.searchMode === "script" && queueStatus) {
+      return allCreators;
+    }
+
+    return sortCreatorsForSelectedFilters(allCreators, filters);
+  }, [allCreators, filters.searchMode, filters.subscriberTier, filters.country, filters.sort, queueStatus]);
 
   const frontendTotalPages = Math.max(
     1,
@@ -1933,60 +2460,99 @@ export default function YouTubeBrowse() {
   const creators = sortedCreators.slice(0, visibleCreatorsCount);
   const hasMoreCreators = creators.length < sortedCreators.length;
   const panelCreator = selectedCreator;
+  const queueProgressPercent = queueStatus ? getQueueProgressPercent(queueStatus) : 8;
+  const queueProgressCount = queueStatus ? Math.max(0, Number(queueStatus.count || 0)) : 0;
+  const queueProgressTarget = queueStatus
+    ? Math.max(1, Number(queueStatus.target || BROWSE_MIN_RESULTS))
+    : BROWSE_MIN_RESULTS;
 
   async function loadCreators(nextFilters: Partial<Filters> = filters) {
+    const mergedFilters = {
+      ...filters,
+      ...nextFilters,
+    };
+    const activeSearchMode = normalizeSearchMode(String(mergedFilters.searchMode));
+    const runId = scriptQueueRunRef.current + 1;
+    scriptQueueRunRef.current = runId;
+
     try {
       setLoading(true);
       setError("");
       setWarning("");
+      setQueueStatus(null);
       setFrontendPage(1);
 
-      let pollCount = 0;
-      let lastResponse: any = null;
+      const requestPayload = {
+        ...mergedFilters,
+        ...getSearchModeApiFlags(activeSearchMode),
+        strictCountry: mergedFilters.country ? "true" : "false",
+        page: 1,
+        limit: DISCOVERY_FETCH_LIMIT,
+        frontendPagination: true,
+        minimumResults: BROWSE_MIN_RESULTS,
+      };
 
-      while (true) {
-        const response = await fetchYouTubeCreators(
-          {
-            ...filters,
-            ...nextFilters,
-            page: 1,
-            limit: DISCOVERY_FETCH_LIMIT,
-            frontendPagination: true,
-            fast: true,
-            background: true,
-            minimumResults: BROWSE_MIN_RESULTS,
-          },
-          campaignId,
-        );
-
-        lastResponse = response;
-        const fetchedCreators = Array.isArray(response.data) ? response.data : [];
+      if (activeSearchMode !== "script") {
+        const response = await fetchYouTubeCreators(requestPayload, campaignId);
+        const fetchedCreators = getCreatorsFromApiResponse(response);
         setAllCreators(fetchedCreators);
-
-        const shouldKeepPolling =
-          Boolean(response.processing) &&
-          fetchedCreators.length < BROWSE_MIN_RESULTS &&
-          pollCount < BROWSE_MAX_POLLS;
-
-        if (!shouldKeepPolling) break;
-
-        setWarning(
-          response.warning ||
-            `Hold on, we are still searching creators... ${fetchedCreators.length}/${BROWSE_MIN_RESULTS} found`,
-        );
-
-        pollCount += 1;
-        await wait(BROWSE_POLL_DELAY_MS);
+        setWarning(response.warning || "");
+        setQueueStatus(null);
+        return;
       }
 
-      const finalCreators = Array.isArray(lastResponse?.data) ? lastResponse.data : [];
-      setAllCreators(finalCreators);
-      setWarning(lastResponse?.warning || "");
-    } catch (err: any) {
       setAllCreators([]);
+      setWarning("");
+
+      const firstResponse = await fetchYouTubeCreators(requestPayload, campaignId);
+      if (scriptQueueRunRef.current !== runId) return;
+
+      let creatorsFromQueue = getCreatorsFromApiResponse(firstResponse);
+      setAllCreators((prev) => mergeCreatorsTopToBottom(prev, creatorsFromQueue));
+
+      const firstStatus = getQueueStatusFromResponse(firstResponse);
+      if (firstStatus) setQueueStatus(firstStatus);
+
+      const jobId = String(firstResponse.jobId || "").trim();
+      const isQueued = Boolean(jobId && firstResponse.processing);
+
+      if (!isQueued) {
+        setWarning(firstResponse.warning || "");
+        return;
+      }
+
+      let pollCount = 0;
+      let latestResponse = firstResponse;
+
+      while (
+        scriptQueueRunRef.current === runId &&
+        Boolean(latestResponse.processing) &&
+        pollCount < BROWSE_MAX_POLLS * 8
+      ) {
+        await wait(1400);
+        if (scriptQueueRunRef.current !== runId) return;
+
+        latestResponse = await fetchYouTubeCreatorQueue(jobId);
+        creatorsFromQueue = getCreatorsFromApiResponse(latestResponse);
+        setAllCreators((prev) => mergeCreatorsTopToBottom(prev, creatorsFromQueue));
+
+        const nextStatus = getQueueStatusFromResponse(latestResponse);
+        if (nextStatus) setQueueStatus(nextStatus);
+
+        if (!latestResponse.processing || latestResponse.done) break;
+        pollCount += 1;
+      }
+
+      setWarning(latestResponse.warning || "");
+    } catch (err: any) {
       setError(err?.message || "Failed to fetch");
+      if (activeSearchMode !== "script") {
+        setAllCreators([]);
+      }
     } finally {
-      setLoading(false);
+      if (scriptQueueRunRef.current === runId) {
+        setLoading(false);
+      }
     }
   }
 
@@ -1998,6 +2564,7 @@ export default function YouTubeBrowse() {
         filterDropdownRef.current,
         tierDropdownRef.current,
         countryDropdownRef.current,
+        searchModeDropdownRef.current,
       ].some((node) => node?.contains(target));
 
       if (!clickedInsideDropdown) {
@@ -2005,6 +2572,7 @@ export default function YouTubeBrowse() {
         setShowMoreFilters(false);
         setShowTierDropdown(false);
         setShowCountryDropdown(false);
+        setShowSearchModeDropdown(false);
       }
     }
 
@@ -2027,9 +2595,13 @@ export default function YouTubeBrowse() {
       setFrontendPage(1);
       setWarning("");
       setError("");
+      setQueueStatus(null);
+      scriptQueueRunRef.current += 1;
+      setShowSearchModeDropdown(false);
       return;
     }
 
+    setShowSearchModeDropdown(false);
     setFilters(next);
     loadCreators(next);
   }
@@ -2049,6 +2621,7 @@ export default function YouTubeBrowse() {
     setFilters(next);
     setCountrySearch("");
     setShowCountryDropdown(false);
+    setShowSearchModeDropdown(false);
   }
 
   function handleResetAll() {
@@ -2059,9 +2632,12 @@ export default function YouTubeBrowse() {
     setShowCategoryDropdown(false);
     setShowTierDropdown(false);
     setShowCountryDropdown(false);
+    setShowSearchModeDropdown(false);
     setCountrySearch("");
     setWarning("");
     setError("");
+    setQueueStatus(null);
+    scriptQueueRunRef.current += 1;
   }
 
   function handleTierChange(value: string) {
@@ -2076,6 +2652,11 @@ export default function YouTubeBrowse() {
   }
 
   function handleCategorySelect(value: string) {
+    if (filters.searchMode === "channel") {
+      setShowCategoryDropdown(false);
+      return;
+    }
+
     updateFilter("category", value);
     setShowCategoryDropdown(false);
   }
@@ -2097,15 +2678,94 @@ export default function YouTubeBrowse() {
   }
 
   return (
-    <div className="min-h-screen bg-white px-6 py-5 text-black">
-      <div className="mb-5">
-        <h1 className="text-[18px] font-semibold">Browse influencer</h1>
-      </div>
+    <div className="min-h-screen bg-white text-black">
+      <div className="w-full min-w-0">
+        <div className="border-b border-r border-[#D6D6D6] bg-white px-8 py-4 shadow-[0_2px_4px_-2px_rgba(0,0,0,0.08),0_4px_8px_-2px_rgba(0,0,0,0.04)]">
+          <div className="flex w-full items-center justify-end gap-4">
+          <div className="flex h-[56px] min-w-0 flex-1 items-center rounded-[12px] border border-[#E6E6E6] bg-white px-4">
 
-      <div className="rounded-[22px] border border-[#e6d9cc] bg-white px-5 py-4 shadow-sm">
-        <div className="flex w-full items-center gap-3">
-          <div className="flex h-[52px] flex-1 items-center rounded-full border border-[#e4d8cc] bg-white px-5 shadow-sm">
-            <Search className="mr-3 h-5 w-5 text-[#777]" />
+            <div ref={searchModeDropdownRef} className="relative shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSearchModeDropdown((prev) => !prev);
+                  setShowCategoryDropdown(false);
+                  setShowMoreFilters(false);
+                  setShowTierDropdown(false);
+                  setShowCountryDropdown(false);
+                }}
+                className="flex h-8 items-center gap-1.5 rounded-[10px] bg-[#faf7f2] px-3 text-[13px] font-semibold text-black transition hover:bg-[#f4eee6]"
+              >
+                {filters.searchMode === "channel" ? (
+                  <PlayCircle className="h-4 w-4 text-[#9a6500]" />
+                ) : (
+                  <Sparkles className="h-4 w-4 text-[#9a6500]" />
+                )}
+                <span className="whitespace-nowrap">
+                  {filters.searchMode === "channel" ? "Channel" : "Script"}
+                </span>
+                <ChevronDown
+                  className={`h-4 w-4 shrink-0 transition ${
+                    showSearchModeDropdown ? "rotate-180" : ""
+                  }`}
+                />
+              </button>
+
+              {showSearchModeDropdown && (
+                <div className="absolute left-0 top-[calc(100%+10px)] z-[120] w-[260px] overflow-hidden rounded-[18px] border border-[#e6d9cc] bg-white shadow-2xl">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFilters((prev) => ({
+                        ...prev,
+                        searchMode: "channel",
+                        category: "",
+                        page: 1,
+                      }));
+                      setShowCategoryDropdown(false);
+                      setShowSearchModeDropdown(false);
+                    }}
+                    className={`flex w-full items-start gap-3 px-4 py-3 text-left text-sm hover:bg-[#faf6f1] ${
+                      filters.searchMode === "channel"
+                        ? "bg-[#f7efe6] text-black"
+                        : "text-[#555]"
+                    }`}
+                  >
+                    <PlayCircle className="mt-0.5 h-4 w-4 shrink-0 text-[#9a6500]" />
+                    <span>
+                      <span className="block font-semibold">Channel search</span>
+                      <span className="mt-0.5 block text-xs text-[#7d725f]">
+                        Fast YouTube API channel results, no script.
+                      </span>
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      updateFilter("searchMode", "script");
+                      setShowSearchModeDropdown(false);
+                    }}
+                    className={`flex w-full items-start gap-3 px-4 py-3 text-left text-sm hover:bg-[#faf6f1] ${
+                      filters.searchMode === "script"
+                        ? "bg-[#f7efe6] text-black"
+                        : "text-[#555]"
+                    }`}
+                  >
+                    <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-[#9a6500]" />
+                    <span>
+                      <span className="block font-semibold">Run script</span>
+                      <span className="mt-0.5 block text-xs text-[#7d725f]">
+                        Use script-based discovery for deeper creator matching.
+                      </span>
+                    </span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <span className="mx-3 h-6 w-px shrink-0 bg-[#E6E6E6]" />
+
             <input
               value={filters.keyword}
               onChange={(e) => updateFilter("keyword", e.target.value)}
@@ -2115,24 +2775,38 @@ export default function YouTubeBrowse() {
                   handleSearch();
                 }
               }}
-              placeholder="Search creators, keywords, niches, or topics"
-              className="h-full flex-1 bg-transparent text-[16px] text-black outline-none placeholder:text-[#8a8a8a]"
+              placeholder={getSearchInputPlaceholder(filters.searchMode)}
+              className="h-full min-w-0 flex-1 bg-transparent text-[15px] text-black outline-none placeholder:text-[#B3B3B3]"
             />
+
           </div>
 
-          <div ref={categoryDropdownRef} className="relative min-w-[230px]">
+          <div
+            ref={categoryDropdownRef}
+            className={`relative h-[56px] w-[192px] shrink-0 transition ${
+              filters.searchMode === "channel" ? "opacity-40" : "opacity-100"
+            }`}
+          >
             <button
               type="button"
+              disabled={filters.searchMode === "channel"}
               onClick={() => {
+                if (filters.searchMode === "channel") return;
+
                 setShowCategoryDropdown((prev) => !prev);
                 setShowMoreFilters(false);
                 setShowTierDropdown(false);
                 setShowCountryDropdown(false);
+                setShowSearchModeDropdown(false);
               }}
-              className="flex h-[52px] w-full items-center justify-between gap-3 rounded-full border border-[#e4d8cc] bg-white px-5 text-[15px] font-medium text-black shadow-sm outline-none"
+              className={`flex h-[56px] w-full items-center justify-between gap-2 rounded-[12px] border border-[#E6E6E6] bg-white px-4 text-[16px] font-medium text-black outline-none transition ${
+                filters.searchMode === "channel"
+                  ? "cursor-not-allowed"
+                  : "hover:bg-[#F7F7F7]"
+              }`}
             >
-              <span className="max-w-[170px] truncate">
-                {filters.category || "All categories"}
+              <span className="max-w-[145px] truncate">
+                {filters.searchMode === "channel" ? "All categories" : filters.category || "All categories"}
               </span>
               <ChevronDown
                 className={`h-4 w-4 shrink-0 transition ${
@@ -2141,7 +2815,7 @@ export default function YouTubeBrowse() {
               />
             </button>
 
-            {showCategoryDropdown && (
+            {filters.searchMode !== "channel" && showCategoryDropdown && (
               <div className="absolute left-0 top-[calc(100%+8px)] z-[90] w-[300px] overflow-hidden rounded-[18px] border border-[#e6d9cc] bg-white shadow-2xl">
                 <button
                   type="button"
@@ -2188,28 +2862,39 @@ export default function YouTubeBrowse() {
             )}
           </div>
 
-          <div ref={filterDropdownRef} className="relative">
+          <div
+            ref={filterDropdownRef}
+            className={`relative h-[56px] w-[192px] shrink-0 transition ${
+              filters.searchMode === "channel" ? "opacity-40" : "opacity-100"
+            }`}
+          >
             <button
               type="button"
+              disabled={filters.searchMode === "channel"}
               onClick={() => {
+                if (filters.searchMode === "channel") return;
+
                 setShowMoreFilters((prev) => !prev);
                 setShowCategoryDropdown(false);
                 setShowTierDropdown(false);
                 setShowCountryDropdown(false);
+                setShowSearchModeDropdown(false);
               }}
-              className="flex h-[52px] min-w-[135px] items-center justify-center gap-2 rounded-full border border-[#e4d8cc] bg-white px-5 text-[16px] font-medium text-black shadow-sm"
+              className={`flex h-[56px] w-full items-center justify-between gap-2 rounded-[12px] border border-[#E6E6E6] bg-white px-4 text-[16px] font-medium text-black transition ${
+                filters.searchMode === "channel"
+                  ? "cursor-not-allowed"
+                  : "hover:bg-[#F7F7F7]"
+              }`}
             >
-              <SlidersHorizontal className="h-4 w-4" />
-              Filter
-              {activeFiltersCount > 0 && (
-                <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-black px-1.5 text-[11px] text-white">
-                  {activeFiltersCount}
-                </span>
-              )}
-              <ChevronDown className="h-4 w-4" />
+              <span className="truncate">More filters</span>
+              <ChevronDown
+                className={`h-4 w-4 shrink-0 transition ${
+                  showMoreFilters ? "rotate-180" : ""
+                }`}
+              />
             </button>
 
-            {showMoreFilters && (
+            {filters.searchMode !== "channel" && showMoreFilters && (
               <div className="absolute right-0 top-[calc(100%+10px)] z-50 w-[640px] overflow-visible rounded-[26px] border border-[#eadfd3] bg-white shadow-[0_24px_80px_rgba(28,18,8,0.18)]">
                 <div className="rounded-t-[26px] bg-gradient-to-r from-[#fff8ea] via-white to-[#f7f2ed] px-6 py-5">
                   <div className="flex items-start justify-between gap-4">
@@ -2464,16 +3149,16 @@ export default function YouTubeBrowse() {
             type="button"
             onClick={handleSearch}
             disabled={loading}
-            className="h-[52px] min-w-[125px] rounded-full bg-black px-7 text-[16px] font-semibold text-white disabled:bg-[#d4d4d4] disabled:text-[#777]"
+            className="flex h-[56px] w-[128px] shrink-0 items-center justify-center gap-2 rounded-[12px] bg-black px-5 text-[15px] font-semibold text-white transition hover:bg-[#222222] disabled:cursor-not-allowed disabled:bg-[#B8B8B8]"
           >
-            {loading ? "Searching" : "Search"}
+            <Search className="h-[17px] w-[17px]" />
+            <span>Search</span>
           </button>
+
         </div>
 
-        <div className="mt-3 flex flex-wrap gap-2">
-          <span className="rounded-full border border-[#e4d8cc] bg-[#faf7f2] px-3 py-1.5 text-[13px] text-[#6f6258]">
-            Platforms: YouTube
-          </span>
+        {(filters.category || filters.subscriberTier || filters.country) && (
+          <div className="mt-4 flex flex-wrap gap-2">
           {filters.category && (
             <span className="rounded-full border border-[#e4d8cc] bg-[#faf7f2] px-3 py-1.5 text-[13px] text-[#6f6258]">
               Category: {filters.category}
@@ -2489,9 +3174,11 @@ export default function YouTubeBrowse() {
               Country: {selectedCountryLabel}
             </span>
           )}
+          </div>
+        )}
         </div>
-      </div>
 
+        <div className="px-8 py-5">
       {warning && (
         <div className="mt-5 rounded-[18px] border border-[#f3d195] bg-[#fff8e8] px-5 py-3 text-[#946200]">
           {warning}
@@ -2503,34 +3190,56 @@ export default function YouTubeBrowse() {
         </div>
       )}
 
-      {loading ? (
-        <div className="mt-5 rounded-[24px] bg-white">
-          <CreatorSearchLoader topic={filters.keyword || filters.category || "your campaign"} />
+      {(queueStatus || (loading && filters.searchMode === "script")) && filters.searchMode === "script" ? (
+        <div className="mt-5 mb-3 w-full">
+          <div className="flex items-center justify-between text-[12px] font-medium text-[#9B9B9B]">
+            <span>{queueProgressCount}</span>
+            <span>{queueProgressTarget}</span>
+          </div>
+
+          <div className="mt-3 h-px w-full overflow-hidden rounded-full bg-[#E6E6E6]">
+            <div
+              className="h-full rounded-full bg-[#111111] transition-[width] duration-500 ease-out"
+              style={{ width: `${queueProgressPercent}%` }}
+            />
+          </div>
+
         </div>
+      ) : null}
+
+      {loading && creators.length === 0 ? (
+        filters.searchMode === "script" ? null : (
+          <div className="mt-5 rounded-[24px] bg-white">
+            <CreatorSearchLoader
+              topic={filters.keyword || filters.category || "YouTube channels"}
+            />
+          </div>
+        )
       ) : creators.length === 0 ? (
         <CreatorEmptyState searched={hasSearchCriteria(filters, campaignId)} />
       ) : (
-        <div className="mt-5 overflow-hidden rounded-[24px] border border-[#e6d9cc] bg-white">
-          <div className="flex items-center justify-between border-b border-[#eee5da] px-6 py-4">
-            <div>
-              <h2 className="text-[20px] font-semibold text-black">
-                YouTube creators
-              </h2>
-            </div>
+        <div className="mt-5">
+          <div className="mb-4 flex items-center justify-between px-1">
+            <h2 className="text-[20px] font-semibold text-black">
+              YouTube creators
+            </h2>
           </div>
 
-          <div className="divide-y divide-[#f0e8df]">
+          <div className="space-y-6">
             {creators.map((creator) => {
               const authenticityScore = getCreatorAuthenticityScore(creator);
               const countryDisplay = getCreatorCountryDisplay(creator, countries);
               const tierLabel = getCreatorTierLabel(creator) || "-";
               const handleLabel = getCreatorHandleLabel(creator);
               const thumbnails = getLatestVideoThumbnails(creator);
+              const bookmarkKeys = getCreatorBookmarkKeys(creator);
+              const isBookmarked = bookmarkKeys.some((key) => bookmarkedKeys.has(key));
+              const isBookmarking = bookmarkKeys.some((key) => bookmarkingKeys.has(key));
 
               return (
                 <div
                   key={creator.channelId}
-                  className="grid gap-4 px-5 py-4 text-sm text-black transition hover:bg-[#fffdf8] lg:grid-cols-[minmax(300px,1.35fr)_minmax(130px,0.5fr)_180px_minmax(150px,0.55fr)_120px] lg:items-center"
+                  className="grid min-h-[108px] gap-4 rounded-[16px] border border-[#E6E6E6] bg-white px-5 py-4 text-sm text-black shadow-[0_2px_4px_-2px_rgba(0,0,0,0.08),0_4px_8px_-2px_rgba(0,0,0,0.04)] transition hover:bg-[#f7f7f7] lg:grid-cols-[minmax(300px,1.35fr)_minmax(130px,0.48fr)_160px_minmax(150px,0.52fr)_164px] lg:items-center"
                 >
                   <div className="flex min-w-0 items-center gap-3">
                     <AvatarImage
@@ -2582,7 +3291,7 @@ export default function YouTubeBrowse() {
                     />
                   </div>
 
-                  <div className="flex justify-start lg:justify-end">
+                  <div className="flex items-center justify-start gap-3 lg:justify-end">
                     <button
                       type="button"
                       onClick={() => {
@@ -2591,10 +3300,30 @@ export default function YouTubeBrowse() {
                         setShowTierDropdown(false);
                         openMediaKitPage(creator);
                       }}
-                      className="inline-flex items-center gap-1.5 rounded-full bg-black px-4 py-2.5 text-[12px] font-semibold leading-none text-white"
+                      className="inline-flex h-11 items-center gap-1.5 rounded-[12px] bg-black px-4 text-[12px] font-semibold leading-none text-white transition hover:bg-[#1f1f1f]"
                     >
                       <Eye className="h-3.5 w-3.5" />
                       Insights
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={isBookmarking || isBookmarked}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        handleBookmarkCreator(creator);
+                      }}
+                      title={isBookmarked ? "Bookmarked" : "Bookmark creator"}
+                      aria-label={isBookmarked ? "Bookmarked" : "Bookmark creator"}
+                      className={`flex h-11 w-11 items-center justify-center rounded-[14px] border border-[#E6E6E6] bg-white transition hover:bg-[#f7f7f7] disabled:cursor-default ${
+                        isBookmarked ? "text-[#f43f5e]" : "text-[#111111]"
+                      }`}
+                    >
+                      <Heart
+                        className="h-[18px] w-[18px]"
+                        fill={isBookmarked ? "currentColor" : "none"}
+                      />
                     </button>
                   </div>
                 </div>
@@ -2603,7 +3332,7 @@ export default function YouTubeBrowse() {
           </div>
 
           {hasMoreCreators ? (
-            <div className="flex justify-center border-t border-[#eee5da] px-6 py-5">
+            <div className="flex justify-center px-6 py-5">
               <button
                 type="button"
                 disabled={loading}
@@ -2616,6 +3345,8 @@ export default function YouTubeBrowse() {
           ) : null}
         </div>
       )}
+      </div>
+      </div>
 
       <DetailPanel
         open={detailPanelOpen}

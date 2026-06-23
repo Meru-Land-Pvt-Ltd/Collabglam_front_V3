@@ -2603,7 +2603,7 @@ function getYouTubeMediaKitHeroBackgroundImage(data?: YouTubeMediaKitData | null
 
 function YouTubeMediaKitPill({ children }: { children: React.ReactNode }) {
   return (
-    <span className="rounded-full border border-[#efdba5] bg-[#fff8e6] px-3 py-1 text-xs font-semibold text-[#7a5a16]">
+    <span className="inline-flex rounded-full border border-[#efdba5] bg-[#fffaf0] px-3 py-1 text-[12px] font-medium leading-none text-[#8a641c]">
       {children}
     </span>
   );
@@ -2621,13 +2621,13 @@ function YouTubeMediaKitMetricCard({
   icon?: React.ReactNode;
 }) {
   return (
-    <div className="rounded-[22px] border border-[#f1e2c2] bg-white/95 p-5 shadow-sm">
-      <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-full bg-[#fff3c4] text-[#9a6500]">
+    <div className="h-full rounded-[24px] border border-[#eadfcb] bg-white px-5 py-5 shadow-[0_12px_30px_rgba(120,83,20,0.05)]">
+      <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-full bg-[#fff2c7] text-[#9a6500]">
         {icon || <Sparkles className="h-5 w-5" />}
       </div>
-      <p className="text-xs font-semibold uppercase tracking-wide text-[#9a8a73]">{label}</p>
-      <p className="mt-1 text-[24px] font-black text-black">{value}</p>
-      {sub ? <p className="mt-1 text-xs leading-5 text-[#80725d]">{sub}</p> : null}
+      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#9a8a73]">{label}</p>
+      <p className="mt-2 text-[26px] font-extrabold leading-none tracking-tight text-[#111111]">{value}</p>
+      {sub ? <p className="mt-3 text-[12px] leading-5 text-[#7d725f]">{sub}</p> : null}
     </div>
   );
 }
@@ -2646,21 +2646,21 @@ function YouTubeMediaKitScoreCard({
   const finalValue = scoreYouTubeMediaKitValue(value);
 
   return (
-    <div className="rounded-[22px] border border-[#f1e2c2] bg-white p-5 shadow-sm">
+    <div className="h-full rounded-[24px] border border-[#eadfcb] bg-white px-5 py-5 shadow-[0_12px_30px_rgba(120,83,20,0.05)]">
       <div className="flex items-start justify-between gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#fff3c4] text-[#9a6500]">
+        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#fff2c7] text-[#9a6500]">
           {icon}
         </div>
         <div className="text-right">
-          <p className={`text-[28px] font-black leading-none ${getYouTubeMediaKitScoreTextClass(finalValue)}`}>
+          <p className={`text-[30px] font-extrabold leading-none tracking-tight ${getYouTubeMediaKitScoreTextClass(finalValue)}`}>
             {finalValue}
           </p>
-          <p className="mt-1 text-[11px] font-semibold uppercase tracking-wide text-[#9a8a73]">/100</p>
+          <p className="mt-1 text-[11px] font-semibold text-[#8a7d68]">/100</p>
         </div>
       </div>
-      <p className="mt-4 text-sm font-bold text-black">{label}</p>
-      {hint ? <p className="mt-1 text-xs leading-5 text-[#80725d]">{hint}</p> : null}
-      <div className="mt-4 h-2 overflow-hidden rounded-full bg-[#f1e2c2]">
+      <p className="mt-5 text-[14px] font-semibold text-[#111111]">{label}</p>
+      {hint ? <p className="mt-1 text-[12px] leading-5 text-[#7d725f]">{hint}</p> : null}
+      <div className="mt-5 h-2 overflow-hidden rounded-full bg-[#eadfcb]">
         <div
           className={`h-full rounded-full ${getYouTubeMediaKitScoreBarClass(finalValue)}`}
           style={{ width: `${finalValue}%` }}
@@ -2682,10 +2682,10 @@ function YouTubeMediaKitSection({
   className?: string;
 }) {
   return (
-    <section className={`rounded-[26px] border border-[#f1e2c2] bg-white p-6 shadow-sm ${className}`}>
+    <section className={`rounded-[24px] border border-[#eadfcb] bg-white p-5 shadow-[0_12px_30px_rgba(120,83,20,0.05)] ${className}`}>
       <div className="mb-5 flex items-center gap-2">
         {icon ? <span className="text-[#b7791f]">{icon}</span> : null}
-        <h2 className="text-[18px] font-black text-black">{title}</h2>
+        <h2 className="text-[16px] font-semibold text-[#222222]">{title}</h2>
       </div>
       {children}
     </section>
@@ -2696,8 +2696,8 @@ function YouTubeMediaKitProgress({ value }: { value?: number }) {
   const finalValue = Math.max(0, Math.min(100, Number(value || 0)));
 
   return (
-    <div className="h-2 overflow-hidden rounded-full bg-[#f1e2c2]">
-      <div className="h-full rounded-full bg-[#d97706]" style={{ width: `${finalValue}%` }} />
+    <div className="h-2 overflow-hidden rounded-full bg-[#eadfcb]">
+      <div className="h-full rounded-full bg-[#d99707]" style={{ width: `${finalValue}%` }} />
     </div>
   );
 }
@@ -2716,12 +2716,12 @@ function YouTubeMediaKitPanelContent({
   if (loading) {
     return (
       <div className="grid min-h-[60vh] place-items-center">
-        <div className="max-w-[560px] rounded-[32px] border border-[#f1e2c2] bg-white p-9 text-center shadow-sm">
-          <div className="mx-auto flex h-16 w-16 animate-pulse items-center justify-center rounded-full bg-[#fff3c4] text-[#9a6500]">
-            <Sparkles className="h-8 w-8" />
+        <div className="max-w-[560px] rounded-[24px] border border-[#eadfcb] bg-white p-8 text-center shadow-[0_12px_30px_rgba(120,83,20,0.05)]">
+          <div className="mx-auto flex h-14 w-14 animate-pulse items-center justify-center rounded-full bg-[#fff2c7] text-[#9a6500]">
+            <Sparkles className="h-7 w-7" />
           </div>
-          <h1 className="mt-5 text-2xl font-black text-black">Media kit Loading</h1>
-          <p className="mt-2 text-sm leading-6 text-[#7d725f]">
+          <h1 className="mt-5 text-[22px] font-semibold text-[#111111]">Media kit Loading</h1>
+          <p className="mt-2 text-[13px] leading-6 text-[#7d725f]">
             Preparing audience, authenticity, performance, safety, sponsorship, and campaign prediction insights.
           </p>
         </div>
@@ -2732,9 +2732,9 @@ function YouTubeMediaKitPanelContent({
   if (error) {
     return (
       <div className="grid min-h-[60vh] place-items-center">
-        <div className="max-w-[560px] rounded-[32px] border border-red-100 bg-white p-9 text-center shadow-sm">
-          <h1 className="text-2xl font-black text-black">Media kit unavailable</h1>
-          <p className="mt-2 text-sm leading-6 text-red-600">{error}</p>
+        <div className="max-w-[560px] rounded-[24px] border border-red-100 bg-white p-8 text-center shadow-[0_12px_30px_rgba(120,83,20,0.05)]">
+          <h1 className="text-[22px] font-semibold text-[#111111]">Media kit unavailable</h1>
+          <p className="mt-2 text-[13px] leading-6 text-red-600">{error}</p>
         </div>
       </div>
     );
@@ -2771,18 +2771,16 @@ function YouTubeMediaKitPanelContent({
   const fitScore = scoreYouTubeMediaKitValue(scores?.campaignFitScore || scores?.relevancyScore);
 
   return (
-    <div className="relative min-h-full bg-[#fffdf9]">
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-[420px] bg-[radial-gradient(circle_at_top,#fff3c4_0%,#fff9ea_38%,rgba(255,255,255,0)_78%)] opacity-70" />
-
+    <div className="relative min-h-full bg-white">
       <div className="relative z-10 mx-auto w-full max-w-full px-0 py-0">
-        <section className="relative overflow-hidden rounded-[34px] border border-[#eadfcb] bg-white shadow-[0_18px_45px_rgba(120,83,20,0.08)]">
+        <section className="relative overflow-hidden rounded-[24px] border border-[#eadfcb] bg-white shadow-[0_12px_30px_rgba(120,83,20,0.05)]">
           {heroBackgroundImage ? (
             <div
               className="absolute inset-0 bg-cover bg-center opacity-[0.12]"
               style={{ backgroundImage: `url(${proxyYouTubeMediaKitImageUrl(heroBackgroundImage)})` }}
             />
           ) : null}
-          <div className="absolute inset-0 bg-gradient-to-br from-white via-white/95 to-[#fff7e2]/85" />
+          <div className="absolute inset-0 bg-gradient-to-br from-white via-white/95 to-[#fffaf0]/85" />
 
           <div className="relative grid gap-0 lg:grid-cols-[1.18fr_0.82fr]">
             <div className="p-7 sm:p-9">
@@ -2808,7 +2806,7 @@ function YouTubeMediaKitPanelContent({
                     {overview?.category ? <YouTubeMediaKitPill>{overview.category}</YouTubeMediaKitPill> : null}
                     {overview?.primaryLanguage ? <YouTubeMediaKitPill>{overview.primaryLanguage}</YouTubeMediaKitPill> : null}
                   </div>
-                  <h1 className="text-[34px] font-black leading-tight text-black sm:text-[42px]">
+                  <h1 className="text-[34px] font-extrabold leading-tight tracking-tight text-[#050505] sm:text-[42px]">
                     {displayName}
                   </h1>
                   <p className="mt-3 max-w-[760px] line-clamp-3 text-sm leading-6 text-[#6f6658]">
@@ -2825,15 +2823,15 @@ function YouTubeMediaKitPanelContent({
               </div>
             </div>
 
-            <div className="border-t border-[#eadfcb] bg-[#fffaf0]/90 p-7 text-black backdrop-blur-sm sm:p-9 lg:border-l lg:border-t-0">
-              <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#7a6440]">Match score</p>
-              <p className="mt-2 text-[46px] font-black leading-none text-black">{fitScore}</p>
-              <p className="mt-2 text-lg font-black text-black">
+            <div className="border-t border-[#eadfcb] bg-[#fffaf0]/80 p-7 text-[#111111] backdrop-blur-sm sm:p-9 lg:border-l lg:border-t-0">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#7a6440]">Match score</p>
+              <p className="mt-2 text-[46px] font-extrabold leading-none tracking-tight text-[#050505]">{fitScore}</p>
+              <p className="mt-2 text-[18px] font-semibold text-[#050505]">
                 {brandFit?.campaignFit || recommendation?.recommendation || 'Brand Match'}
               </p>
               <div className="mt-7">
-                <p className="text-xs font-bold uppercase text-[#7a6440]">Authenticity</p>
-                <p className={`mt-1 text-3xl font-black ${getYouTubeMediaKitScoreTextClass(scores?.authenticityScore)}`}>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#7a6440]">Authenticity</p>
+                <p className={`mt-1 text-[30px] font-extrabold ${getYouTubeMediaKitScoreTextClass(scores?.authenticityScore)}`}>
                   {scoreYouTubeMediaKitValue(scores?.authenticityScore)}%
                 </p>
               </div>
@@ -2858,8 +2856,8 @@ function YouTubeMediaKitPanelContent({
           {(brandFit?.whyThisCreatorFits || []).length ? (
             <ul className="space-y-3">
               {brandFit?.whyThisCreatorFits?.slice(0, 5).map((item) => (
-                <li key={item} className="flex gap-3 text-sm leading-6 text-[#655b4d]">
-                  <span className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#fff3c4] text-[#9a6500]">
+                <li key={item} className="flex gap-3 text-[13px] leading-6 text-[#655b4d]">
+                  <span className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#fff2c7] text-[#9a6500]">
                     <CheckCircle2 className="h-3.5 w-3.5" />
                   </span>
                   {item}
@@ -2867,7 +2865,7 @@ function YouTubeMediaKitPanelContent({
               ))}
             </ul>
           ) : (
-            <p className="text-sm leading-6 text-[#655b4d]">
+            <p className="text-[13px] leading-6 text-[#655b4d]">
               This creator has been matched using campaign topic, performance, and creator profile signals.
             </p>
           )}
@@ -2888,20 +2886,20 @@ function YouTubeMediaKitPanelContent({
           <YouTubeMediaKitSection title="Content Breakdown" icon={<Zap className="h-5 w-5" />}>
             <div className="space-y-4">
               <div>
-                <div className="mb-2 flex justify-between text-sm font-bold text-black">
+                <div className="mb-2 flex justify-between text-[13px] font-semibold text-[#111111]">
                   <span>Long-form</span>
                   <span>{content?.longFormPercentage || 0}%</span>
                 </div>
                 <YouTubeMediaKitProgress value={content?.longFormPercentage || 0} />
               </div>
               <div>
-                <div className="mb-2 flex justify-between text-sm font-bold text-black">
+                <div className="mb-2 flex justify-between text-[13px] font-semibold text-[#111111]">
                   <span>Shorts</span>
                   <span>{content?.shortsPercentage || 0}%</span>
                 </div>
                 <YouTubeMediaKitProgress value={content?.shortsPercentage || 0} />
               </div>
-              <div className="rounded-[18px] bg-[#fff8e6] p-4 text-sm font-semibold text-[#6f5a2c]">
+              <div className="rounded-[18px] border border-[#eadfcb] bg-[#fffaf0] p-4 text-[13px] font-medium text-[#6f5a2c]">
                 {content?.contentType || 'Original creator content'}
               </div>
               {(content?.recentVideoThemes || []).length ? (
@@ -2959,33 +2957,33 @@ function YouTubeMediaKitPanelContent({
           </div>
         </YouTubeMediaKitSection> */}
 
-        <section className="mt-6 rounded-[26px] bg-gradient-to-br from-[#7c4a03] via-[#d97706] to-[#facc15] p-6 text-white shadow-sm">
+        <section className="mt-6 rounded-[24px] border border-[#eadfcb] bg-white p-5 text-[#111111] shadow-[0_12px_30px_rgba(120,83,20,0.05)]">
           <div className="grid gap-6 md:grid-cols-[1fr_1fr]">
             <div>
-              <div className="flex items-center gap-2"><TrendingUp className="h-5 w-5" /><h4 className="text-[18px] font-bold">Predicted Campaign Impact</h4></div>
-              <p className="mt-5 text-[30px] font-black">
+              <div className="flex items-center gap-2 text-[#b7791f]"><TrendingUp className="h-5 w-5" /><h4 className="text-[16px] font-semibold text-[#222222]">Predicted Campaign Impact</h4></div>
+              <p className="mt-5 text-[28px] font-extrabold leading-none tracking-tight text-[#050505]">
                 {formatYouTubeMediaKitNumber(prediction?.expectedViewsLow)} - {formatYouTubeMediaKitNumber(prediction?.expectedViewsHigh)}
               </p>
-              <p className="text-sm text-white/80">Predicted views based on recent performance</p>
-              <p className="mt-5 text-[26px] font-black">
+              <p className="mt-2 text-[13px] text-[#7d725f]">Predicted views based on recent performance</p>
+              <p className="mt-5 text-[26px] font-extrabold leading-none tracking-tight text-[#050505]">
                 {formatYouTubeMediaKitNumber(prediction?.expectedEngagementLow)} - {formatYouTubeMediaKitNumber(prediction?.expectedEngagementHigh)}
               </p>
-              <p className="text-sm text-white/80">Predicted engagements</p>
+              <p className="mt-2 text-[13px] text-[#7d725f]">Predicted engagements</p>
             </div>
             <div>
-              <p className="mb-3 text-xs font-bold uppercase tracking-wide text-white/75">Recommended deliverables</p>
+              <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#9a8a73]">Recommended deliverables</p>
               <div className="space-y-2">
                 {(prediction?.recommendedDeliverables || []).length ? (
                   prediction?.recommendedDeliverables?.map((item) => (
-                    <div key={item} className="flex items-center gap-2 text-sm"><CheckCircle2 className="h-4 w-4" /> {item}</div>
+                    <div key={item} className="flex items-center gap-2 text-[13px] text-[#655b4d]"><CheckCircle2 className="h-4 w-4 text-[#9a6500]" /> {item}</div>
                   ))
                 ) : (
-                  <div className="flex items-center gap-2 text-sm"><CheckCircle2 className="h-4 w-4" /> Creator content integration</div>
+                  <div className="flex items-center gap-2 text-[13px] text-[#655b4d]"><CheckCircle2 className="h-4 w-4 text-[#9a6500]" /> Creator content integration</div>
                 )}
               </div>
-              <div className="mt-6 rounded-[16px] bg-white/15 p-4">
-                <p className="text-xs uppercase text-white/70">Budget fit for this creator</p>
-                <p className="mt-1 text-xl font-bold">{prediction?.budgetFit || 'Medium'}</p>
+              <div className="mt-6 rounded-[16px] border border-[#eadfcb] bg-[#fffaf0] p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#9a8a73]">Budget fit for this creator</p>
+                <p className="mt-1 text-xl font-semibold text-[#111111]">{prediction?.budgetFit || 'Medium'}</p>
               </div>
             </div>
           </div>
@@ -5243,8 +5241,8 @@ Team CollabGlam`;
       <>
         <div className="fixed inset-0 z-[90]">
           <div className="absolute inset-0 bg-black/30" />
-          <div className="absolute right-0 top-0 h-full w-full max-w-full overflow-y-auto border-l bg-white shadow-2xl md:w-full xl:w-full rounded-none md:rounded-l-3xl">
-            <div className="sticky top-0 overflow-visible border-b bg-white/90 px-4 py-3 backdrop-blur">
+          <div className="absolute right-0 top-0 isolate h-full w-full max-w-full overflow-y-auto overflow-x-hidden border-l bg-white shadow-2xl md:w-full xl:w-full rounded-none md:rounded-l-3xl">
+            <div className="sticky top-0 z-[200] overflow-visible border-b bg-white/95 px-4 py-3 shadow-[0_6px_22px_rgba(15,23,42,0.08)] backdrop-blur supports-[backdrop-filter]:bg-white/85">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div className="flex min-w-0 flex-1 items-start gap-3">
                   <button
@@ -5278,8 +5276,8 @@ Team CollabGlam`;
                   </div> */}
                 </div>
 
-                <div className="flex w-full flex gap-2 lg:w-auto lg:min-w-[220px] lg:items-end">
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center lg:justify-end ">
+                <div className="flex w-full flex-wrap items-center justify-between gap-2 lg:w-auto lg:min-w-[360px] lg:flex-nowrap lg:items-center lg:justify-end lg:pr-4">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center lg:justify-end">
                     <div className="flex flex-col lg:items-end">
                       <span className="text-[10px] uppercase tracking-wide text-gray-500">
                         Latest data
@@ -5301,8 +5299,8 @@ Team CollabGlam`;
                   </div>
 
                   {/* CTA row */}
-                  <div className="relative flex items-center overflow-visible">
-                    <div className="inline-flex overflow-hidden rounded-xl bg-black text-white shadow-sm">
+                  <div className="relative z-[210] flex shrink-0 items-center overflow-visible">
+                    <div className="inline-flex max-w-[calc(100vw-32px)] shrink-0 overflow-hidden rounded-xl bg-black text-white shadow-[0_10px_26px_rgba(0,0,0,0.18)]">
                       <button
                         onClick={(e) => {
                           e.preventDefault();
@@ -5318,7 +5316,7 @@ Team CollabGlam`;
                         }}
                         disabled={!canAct}
                         title={ctaTitle}
-                        className={`inline-flex items-center gap-2 px-4 py-2 text-sm font-medium transition-opacity ${canAct ? 'hover:opacity-90' : 'cursor-not-allowed opacity-70'
+                        className={`inline-flex items-center gap-2 whitespace-nowrap px-4 py-2 text-sm font-medium transition-opacity ${canAct ? 'hover:opacity-90' : 'cursor-not-allowed opacity-70'
                           }`}
                       >
                         {checkingInvitation ? (
@@ -5357,7 +5355,7 @@ Team CollabGlam`;
                           type="button"
                           onClick={handleCampaignPickerToggle}
                           disabled={campaignsLoading || checkingInvitation || loading}
-                          className="inline-flex w-10 items-center justify-center border-l border-white/20 hover:bg-white/10"
+                          className="inline-flex h-10 w-10 shrink-0 items-center justify-center border-l border-white/20 hover:bg-white/10"
                         >
                           {campaignsLoading || checkingInvitation ? (
                             <RefreshCw className="h-4 w-4 animate-spin" />
@@ -5407,14 +5405,14 @@ Team CollabGlam`;
                   />
 
                   {!youtubeAdvancedRequested ? (
-                    <section className="mt-6 rounded-[26px] border border-[#f1e2c2] bg-[#fffdf9] p-6 shadow-sm">
+                    <section className="mt-6 rounded-[24px] border border-[#eadfcb] bg-white p-5 shadow-[0_12px_30px_rgba(120,83,20,0.05)]">
                       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                         <div>
-                          <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#9a8a73]">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#9a8a73]">
                             Modash analytics
                           </p>
-                          <h2 className="mt-1 text-[22px] font-black text-black">Advanced Analytics</h2>
-                          <p className="mt-1 text-sm leading-6 text-[#655b4d]">
+                          <h2 className="mt-1 text-[20px] font-semibold text-[#111111]">Advanced Analytics</h2>
+                          <p className="mt-1 text-[13px] leading-6 text-[#655b4d]">
                             Click below to call the YouTube Modash report API and show graphs and insights.
                           </p>
                         </div>
@@ -5423,7 +5421,7 @@ Team CollabGlam`;
                           type="button"
                           onClick={handleShowYouTubeAdvancedAnalytics}
                           disabled={youtubeAdvancedLoading || !youtubeChannelIdForPanel}
-                          className="inline-flex h-12 items-center justify-center gap-2 rounded-full bg-black px-6 text-sm font-bold text-white shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                          className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-black px-5 text-[13px] font-semibold text-white shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
                         >
                           <BarChart3 className="h-4 w-4" />
                           Show Advanced Analytics

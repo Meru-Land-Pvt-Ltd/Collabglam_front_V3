@@ -260,6 +260,23 @@ type CreatorQueueStatus = {
   message: string;
 };
 
+type BrowseSearchHistoryItem = {
+  id: string;
+  createdAt: string;
+  label: string;
+  filters: Filters;
+  creators: YouTubeCreator[];
+};
+
+type BrandFolderOption = {
+  id: string;
+  title: string;
+  name: string;
+  type: string;
+  itemCount: number;
+  isDefault?: boolean;
+};
+
 type YouTubeCreatorsApiResponse = {
   success?: boolean;
   mode?: string;
@@ -280,7 +297,7 @@ type YouTubeCreatorsApiResponse = {
 function getRuntimeApiBaseUrl() {
   const explicit = String(
     process.env.NEXT_PUBLIC_API_URL ||
-      process.env.NEXT_PUBLIC_API_URL ||
+      process.env.NEXT_PUBLIC_API_BASE_URL ||
       "",
   ).trim();
 
@@ -388,7 +405,8 @@ function getSearchModeApiFlags(mode?: SearchMode | string | null) {
 }
 
 const BROWSE_STATE_CACHE_KEY = "collabglam.youtubeBrowseState.v1";
-const BROWSE_STATE_TTL_MS = 30 * 60 * 1000;
+const BROWSE_SEARCH_HISTORY_KEY = "collabglam.youtubeBrowseSearchHistory.v1";
+const BROWSE_SEARCH_HISTORY_TTL_MS = 90 * 24 * 60 * 60 * 1000;
 
 const YOUTUBE_CATEGORIES = [
   "Film & Animation",
@@ -656,12 +674,12 @@ function getCampaignLoadingBackgrounds(topic?: string) {
 
 function getCreatorSearchLoadingMessages(topicLabel: string) {
   return [
-    `Hold on, our AI is searching creators for ${topicLabel}.`,
-    "Scanning YouTube channels with AI discovery signals.",
-    "Checking creator activity, audience quality, and content fit.",
-    "Matching category, country, tier, and campaign relevance.",
-    "Filtering weak matches using performance and authenticity signals.",
-    "Almost ready — preparing your AI-powered creator shortlist.",
+    `Finding creators that match ${topicLabel}.`,
+    "Reviewing channels that fit your brand goals.",
+    "Checking audience quality and creator activity.",
+    "Matching creators to your selected filters.",
+    "Prioritizing the strongest collaboration fits.",
+    "Preparing your creator shortlist.",
   ];
 }
 
@@ -763,10 +781,10 @@ function CreatorSearchLoader({ topic }: { topic?: string }) {
         </div>
 
         <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-[#a98634]">
-          CollabGlam AI discovery
+          Creator discovery
         </p>
         <h3 className="mt-3 text-[24px] font-semibold text-gray-950">
-          Finding creators for {topicLabel}
+          Finding creators for your brand
         </h3>
         <p
           key={messageIndex}
@@ -1366,7 +1384,7 @@ async function fetchBrandMediaKit(
   const data = await res.json().catch(() => ({}));
 
   if (!res.ok || data.success === false) {
-    throw new Error(data.error || "Failed to load media kit");
+    throw new Error(data.error || "Could not open creator profile");
   }
 
   return data.data as BrandMediaKitData;
@@ -1792,6 +1810,283 @@ async function addBookmarkProfileRequest(
   return data;
 }
 
+function getHistorySearchLabel(filters: Partial<Filters>) {
+  const parts = [filters.keyword, filters.category, filters.subscriberTier, filters.country]
+    .map((item) => String(item || "").trim())
+    .filter(Boolean);
+
+  return parts.length ? parts.join(" • ") : "Creator discovery";
+}
+
+function normalizeHistoryFilters(filters: Partial<Filters>): Filters {
+  return {
+    ...defaultFilters,
+    ...filters,
+    searchMode: normalizeSearchMode(String(filters.searchMode || "script")),
+    page: 1,
+    limit: DISCOVERY_FETCH_LIMIT,
+  };
+}
+
+function loadBrowseSearchHistory(): BrowseSearchHistoryItem[] {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const raw = window.localStorage.getItem(BROWSE_SEARCH_HISTORY_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(parsed)) return [];
+
+    const cutoff = Date.now() - BROWSE_SEARCH_HISTORY_TTL_MS;
+    return parsed
+      .filter((item) => {
+        const createdAt = new Date(item?.createdAt || "").getTime();
+        return createdAt && createdAt >= cutoff && Array.isArray(item?.creators);
+      })
+      .map((item) => ({
+        id: String(item.id || item.createdAt || Math.random()),
+        createdAt: String(item.createdAt || new Date().toISOString()),
+        label: String(item.label || getHistorySearchLabel(item.filters || {})),
+        filters: normalizeHistoryFilters(item.filters || {}),
+        creators: Array.isArray(item.creators) ? item.creators : [],
+      }))
+      .slice(0, 24);
+  } catch {
+    return [];
+  }
+}
+
+function saveBrowseSearchHistory(item: Omit<BrowseSearchHistoryItem, "id" | "createdAt" | "label"> & { label?: string }) {
+  if (typeof window === "undefined") return loadBrowseSearchHistory();
+
+  const filters = normalizeHistoryFilters(item.filters);
+  const creators = Array.isArray(item.creators) ? item.creators.slice(0, BROWSE_MIN_RESULTS) : [];
+  if (!creators.length) return loadBrowseSearchHistory();
+
+  const nextItem: BrowseSearchHistoryItem = {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    createdAt: new Date().toISOString(),
+    label: item.label || getHistorySearchLabel(filters),
+    filters,
+    creators,
+  };
+
+  const existing = loadBrowseSearchHistory().filter((historyItem) => {
+    const sameMode = historyItem.filters.searchMode === filters.searchMode;
+    const sameKeyword = String(historyItem.filters.keyword || "").trim().toLowerCase() === String(filters.keyword || "").trim().toLowerCase();
+    const sameCategory = String(historyItem.filters.category || "") === String(filters.category || "");
+    const sameTier = String(historyItem.filters.subscriberTier || "") === String(filters.subscriberTier || "");
+    const sameCountry = String(historyItem.filters.country || "") === String(filters.country || "");
+    return !(sameMode && sameKeyword && sameCategory && sameTier && sameCountry);
+  });
+
+  const merged = [nextItem, ...existing].slice(0, 24);
+  window.localStorage.setItem(BROWSE_SEARCH_HISTORY_KEY, JSON.stringify(merged));
+  return merged;
+}
+
+function groupBrowseSearchHistory(history: BrowseSearchHistoryItem[]) {
+  return history.reduce<Array<{ label: string; items: BrowseSearchHistoryItem[] }>>((groups, item) => {
+    const date = new Date(item.createdAt);
+    const label = Number.isNaN(date.getTime())
+      ? "Previous searches"
+      : date.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+    const existing = groups.find((group) => group.label === label);
+    if (existing) existing.items.push(item);
+    else groups.push({ label, items: [item] });
+    return groups;
+  }, []);
+}
+
+function extractBrandFolderRows(data: any): BrandFolderOption[] {
+  const direct = [
+    data?.data?.folders,
+    data?.folders,
+    data?.data?.groups?.folders,
+    data?.data?.groups?.bookmarks,
+    data?.data?.groups?.goodFit,
+  ];
+
+  const rows = direct.flatMap((item) => (Array.isArray(item) ? item : []));
+  const normalized = rows.map((folder: any) => ({
+    id: String(folder?._id || folder?.id || folder?.slug || "").trim(),
+    title: String(folder?.title || folder?.name || "Folder").trim(),
+    name: String(folder?.name || folder?.title || "Folder").trim(),
+    type: String(folder?.type || "folder").trim(),
+    itemCount: Number(folder?.itemCount || (Array.isArray(folder?.items) ? folder.items.length : 0) || 0),
+    isDefault: Boolean(folder?.isDefault),
+  })).filter((folder) => folder.id || folder.title);
+
+  const hasBookmark = normalized.some((folder) => folder.type === "bookmark" || folder.name.toLowerCase() === "bookmarked");
+  if (!hasBookmark) {
+    normalized.unshift({
+      id: "__bookmark__",
+      title: "Bookmarked",
+      name: "bookmarked",
+      type: "bookmark",
+      itemCount: 0,
+      isDefault: true,
+    });
+  }
+
+  return normalized;
+}
+
+async function fetchBrandFoldersForSave(brandId?: string) {
+  const endpoints = [
+    "/brand/bookmark/folders",
+    "/brand/folders?type=all&includeItems=1",
+  ];
+
+  let lastError = "Failed to load folders";
+
+  for (const endpoint of endpoints) {
+    const res = await fetch(getApiUrl(endpoint), {
+      method: "GET",
+      credentials: "include",
+      headers: buildAuthHeaders(brandId),
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    if (res.ok && data.success !== false) {
+      return extractBrandFolderRows(data);
+    }
+
+    if (![404, 405].includes(res.status)) {
+      lastError = data.error || data.message || lastError;
+    }
+  }
+
+  throw new Error(lastError);
+}
+
+async function createBrandFolderForSave(title: string, creator: YouTubeCreator, filters: Partial<Filters>, brandId?: string) {
+  const payload = buildBookmarkProfilePayload(creator, filters, brandId);
+  const bodies = [
+    {
+      endpoint: "/brand/bookmark/folders",
+      body: {
+        title,
+        name: title,
+        folderTitle: title,
+        folderName: title,
+        profile: payload.profile,
+        influencer: payload.profile,
+      },
+    },
+    {
+      endpoint: "/brand/folders",
+      body: {
+        title,
+        name: title,
+        type: "folder",
+        items: [payload.profile],
+      },
+    },
+  ];
+
+  let lastError = "Failed to create folder";
+
+  for (const request of bodies) {
+    const res = await fetch(getApiUrl(request.endpoint), {
+      method: "POST",
+      credentials: "include",
+      headers: buildAuthHeaders(brandId),
+      body: JSON.stringify(request.body),
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    if (res.ok && data.success !== false) return data;
+
+    if (![404, 405].includes(res.status)) {
+      lastError = data.error || data.message || lastError;
+    }
+  }
+
+  throw new Error(lastError);
+}
+
+async function saveCreatorToFolder(folder: BrandFolderOption, creator: YouTubeCreator, filters: Partial<Filters>, brandId?: string) {
+  const payload = buildBookmarkProfilePayload(creator, filters, brandId);
+  const folderId = String(folder.id || "").trim();
+  const isBookmarkFolder =
+    folder.type === "bookmark" ||
+    folderId === "__bookmark__" ||
+    folder.name.toLowerCase() === "bookmarked";
+
+  if (isBookmarkFolder) {
+    return addBookmarkProfileRequest(creator, filters, brandId);
+  }
+
+  const body = {
+    ...payload,
+    folderId,
+    folderName: folder.name,
+    folderTitle: folder.title,
+    folderType: folder.type || "folder",
+    profile: {
+      ...payload.profile,
+      folderId,
+      folderName: folder.name,
+      folderTitle: folder.title,
+      status: folder.type === "good_fit" ? "good_fit" : "saved",
+    },
+    influencer: {
+      ...payload.profile,
+      folderId,
+      folderName: folder.name,
+      folderTitle: folder.title,
+      status: folder.type === "good_fit" ? "good_fit" : "saved",
+    },
+  };
+
+  const endpoints = [
+    "/brand/bookmark/profile",
+    `/brand/folders/${encodeURIComponent(folderId)}/items`,
+    `/brand/folders/${encodeURIComponent(folderId)}/influencers`,
+    `/brand/folder/${encodeURIComponent(folderId)}/items`,
+    "/brand/folders/add-influencer",
+    "/brand/folders/save-influencer",
+    folder.type === "good_fit" ? "/brand/good-fit/influencer" : "",
+  ].filter(Boolean);
+
+  let lastError = "Failed to save influencer to selected folder";
+
+  for (const endpoint of endpoints) {
+    const res = await fetch(getApiUrl(endpoint), {
+      method: "POST",
+      credentials: "include",
+      headers: buildAuthHeaders(brandId),
+      body: JSON.stringify(body),
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    if (res.ok && data.success !== false) return data;
+
+    if (![404, 405].includes(res.status)) {
+      lastError = data.error || data.message || lastError;
+    }
+  }
+
+  throw new Error(lastError);
+}
+
+function PlatformLoader({ label = "Loading profile" }: { label?: string }) {
+  return (
+    <div className="grid min-h-[260px] place-items-center px-6 py-10 text-center">
+      <div className="flex flex-col items-center">
+        <div className="relative h-14 w-14 rounded-full border border-[#D6D6D6]">
+          <div className="absolute inset-1 rounded-full border-2 border-transparent border-t-[#22c55e] animate-spin" />
+          <div className="absolute inset-0 grid place-items-center text-[18px]">▶</div>
+        </div>
+        <p className="mt-4 text-sm font-medium text-[#555555]">{label}</p>
+      </div>
+    </div>
+  );
+}
+
 function MiniStatCard({
   icon,
   label,
@@ -1804,13 +2099,13 @@ function MiniStatCard({
   sub?: string;
 }) {
   return (
-    <div className="rounded-[18px] border border-[#f1e2c2] bg-white/95 p-4 shadow-sm">
-      <div className="mb-3 flex h-8 w-8 items-center justify-center rounded-full bg-[#fff3c4] text-[#9a6500]">
+    <div className="rounded-[16px] border border-[#E6E6E6] bg-white p-4 shadow-sm">
+      <div className="mb-3 flex h-8 w-8 items-center justify-center rounded-[10px] bg-[#F7F7F7] text-[#111111]">
         {icon}
       </div>
-      <p className="text-xs font-semibold text-[#9a8a73]">{label}</p>
+      <p className="text-xs font-semibold text-[#777777]">{label}</p>
       <p className="mt-1 text-[22px] font-bold text-black">{value}</p>
-      {sub ? <p className="mt-1 text-xs text-[#8b806f]">{sub}</p> : null}
+      {sub ? <p className="mt-1 text-xs text-[#777777]">{sub}</p> : null}
     </div>
   );
 }
@@ -1825,12 +2120,12 @@ function ScoreCard({
   value?: number;
 }) {
   return (
-    <div className="min-w-[150px] rounded-[18px] border border-[#f1e2c2] bg-white px-4 py-4 text-center shadow-sm">
-      <div className="mx-auto mb-2 flex h-8 w-8 items-center justify-center rounded-full bg-[#fff3c4] text-[#9a6500]">
+    <div className="min-w-[150px] rounded-[16px] border border-[#E6E6E6] bg-white px-4 py-4 text-center shadow-sm">
+      <div className="mx-auto mb-2 flex h-8 w-8 items-center justify-center rounded-[10px] bg-[#F7F7F7] text-[#111111]">
         {icon}
       </div>
       <p className="text-[22px] font-bold text-black">{scoreOrZero(value)}</p>
-      <p className="mt-1 text-xs font-medium text-[#8c8171]">{label}</p>
+      <p className="mt-1 text-xs font-medium text-[#777777]">{label}</p>
     </div>
   );
 }
@@ -1859,10 +2154,10 @@ function KitSection({
   className?: string;
 }) {
   return (
-    <section className={`rounded-[22px] border border-[#f1e2c2] bg-white p-5 shadow-sm ${className}`}>
+    <section className={`rounded-[16px] border border-[#E6E6E6] bg-white p-5 shadow-sm ${className}`}>
       <div className="mb-4 flex items-center gap-2">
-        {icon ? <span className="text-[#b7791f]">{icon}</span> : null}
-        <h4 className="text-[17px] font-bold text-black">{title}</h4>
+        {icon ? <span className="text-[#111111]">{icon}</span> : null}
+        <h4 className="text-[16px] font-semibold text-black">{title}</h4>
       </div>
       {children}
     </section>
@@ -1871,7 +2166,7 @@ function KitSection({
 
 function Pill({ children }: { children: React.ReactNode }) {
   return (
-    <span className="rounded-full border border-[#efdba5] bg-[#fff8e6] px-3 py-1 text-xs font-semibold text-[#7a5a16]">
+    <span className="rounded-[10px] border border-[#E6E6E6] bg-[#F7F7F7] px-3 py-1 text-xs font-semibold text-[#4f463d]">
       {children}
     </span>
   );
@@ -1903,7 +2198,7 @@ function MediaKitDrawer({
         const data = await fetchBrandMediaKit(creator.channelId, filters);
         if (mounted) setMediaKit(data);
       } catch (err: any) {
-        if (mounted) setError(err?.message || "Failed to load media kit");
+        if (mounted) setError(err?.message || "Could not open creator profile");
       } finally {
         if (mounted) setLoading(false);
       }
@@ -1952,7 +2247,7 @@ function MediaKitDrawer({
       >
         <div className="sticky top-0 z-20 flex items-center justify-between border-b border-[#f1e2c2] bg-[#fffdf7]/95 px-7 py-5 backdrop-blur">
           <div>
-            <p className="text-sm font-semibold text-[#9a7a38]">Influencer media kit</p>
+            <p className="text-sm font-semibold text-[#6f6258]">Creator profile</p>
             <h2 className="text-[24px] font-bold text-black">
               {overview?.creatorName || creator.channelName}
             </h2>
@@ -1967,12 +2262,8 @@ function MediaKitDrawer({
         </div>
 
         {loading ? (
-          <div className="px-7 py-20">
-            <div className="flex min-h-[220px] items-center justify-center">
-              <p className="text-sm font-medium text-[#7d725f]">
-                Loading creator details...
-              </p>
-            </div>
+          <div className="px-7 py-10">
+            <PlatformLoader label="Preparing creator profile" />
           </div>
         ) : error ? (
           <div className="m-7 rounded-[18px] border border-[#fecaca] bg-[#fff1f2] px-5 py-4 text-[#b91c1c]">
@@ -2152,7 +2443,7 @@ function MediaKitDrawer({
             <section className="mt-5 rounded-[26px] bg-gradient-to-br from-[#201404] via-[#3d2707] to-[#6b4208] p-6 text-white shadow-sm">
               <div className="mb-6 flex items-center gap-2">
                 <ShieldCheck className="h-5 w-5 text-[#facc15]" />
-                <h4 className="text-[18px] font-bold">Safety & Authenticity</h4>
+                <h4 className="text-[18px] font-bold">Safety and Authenticity</h4>
               </div>
               <div className="grid gap-5 md:grid-cols-3">
                 <div className="text-center">
@@ -2169,11 +2460,11 @@ function MediaKitDrawer({
                 </div>
               </div>
               <div className="mt-6 rounded-[16px] border border-white/10 bg-white/10 p-4 text-sm text-white/85">
-                {(safety?.flags || []).length ? safety?.flags?.join(" · ") : "No major concern detected"}
+                {(safety?.flags || []).length ? safety?.flags?.join(" · ") : "No major concerns detected"}
               </div>
             </section>
 
-            <KitSection title="Proof of Performance" icon={<BarChart3 className="h-[18px] w-[18px]" />} className="mt-5">
+            <KitSection title="Recent Posts Performance" icon={<BarChart3 className="h-[18px] w-[18px]" />} className="mt-5">
               <div className="divide-y divide-[#f1e2c2]">
                 {(topVideos || []).slice(0, 5).map((video) => (
                   <div key={video.title} className="grid grid-cols-[1fr_100px_100px] items-center gap-3 py-3 text-sm">
@@ -2191,11 +2482,11 @@ function MediaKitDrawer({
             <section className="mt-5 rounded-[26px] bg-gradient-to-br from-[#7c4a03] via-[#d97706] to-[#facc15] p-6 text-white shadow-sm">
               <div className="grid gap-6 md:grid-cols-[1fr_1fr]">
                 <div>
-                  <div className="flex items-center gap-2"><TrendingUp className="h-[18px] w-[18px]" /><h4 className="text-[18px] font-bold">Predicted Campaign Impact</h4></div>
+                  <div className="flex items-center gap-2"><TrendingUp className="h-[18px] w-[18px]" /><h4 className="text-[18px] font-bold">Campaign Impact Estimate</h4></div>
                   <p className="mt-5 text-[30px] font-black">{formatNumber(prediction?.expectedViewsLow)} - {formatNumber(prediction?.expectedViewsHigh)}</p>
-                  <p className="text-sm text-white/80">Predicted views based on recent performance</p>
+                  <p className="text-sm text-white/80">Estimated views from recent performance</p>
                   <p className="mt-5 text-[26px] font-black">{formatNumber(prediction?.expectedEngagementLow)} - {formatNumber(prediction?.expectedEngagementHigh)}</p>
-                  <p className="text-sm text-white/80">Predicted engagements</p>
+                  <p className="text-sm text-white/80">Estimated engagements</p>
                 </div>
                 <div>
                   <p className="mb-3 text-xs font-bold uppercase tracking-wide text-white/75">Recommended deliverables</p>
@@ -2255,6 +2546,7 @@ export default function YouTubeBrowse() {
   const [brandId, setBrandId] = useState("");
   const [showMoreFilters, setShowMoreFilters] = useState(false);
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
+  const [categorySearch, setCategorySearch] = useState("");
   const [showTierDropdown, setShowTierDropdown] = useState(false);
   const [showCountryDropdown, setShowCountryDropdown] = useState(false);
   const [showSearchModeDropdown, setShowSearchModeDropdown] = useState(false);
@@ -2268,40 +2560,31 @@ export default function YouTubeBrowse() {
   const [queueStatus, setQueueStatus] = useState<CreatorQueueStatus | null>(null);
   const [bookmarkedKeys, setBookmarkedKeys] = useState<Set<string>>(() => new Set());
   const [bookmarkingKeys, setBookmarkingKeys] = useState<Set<string>>(() => new Set());
+  const [previousSearches, setPreviousSearches] = useState<BrowseSearchHistoryItem[]>(() => loadBrowseSearchHistory());
+  const [showPreviousSearches, setShowPreviousSearches] = useState(false);
+  const [folderModalCreator, setFolderModalCreator] = useState<YouTubeCreator | null>(null);
+  const [folderOptions, setFolderOptions] = useState<BrandFolderOption[]>([]);
+  const [selectedFolderId, setSelectedFolderId] = useState("__bookmark__");
+  const [folderLoading, setFolderLoading] = useState(false);
+  const [folderSaving, setFolderSaving] = useState(false);
+  const [folderError, setFolderError] = useState("");
+  const [newFolderTitle, setNewFolderTitle] = useState("");
+  const [savedFolderMessage, setSavedFolderMessage] = useState("");
+  const [showFolderDropdown, setShowFolderDropdown] = useState(false);
+  const [folderSearch, setFolderSearch] = useState("");
   const scriptQueueRunRef = useRef(0);
   const categoryDropdownRef = useRef<HTMLDivElement | null>(null);
   const filterDropdownRef = useRef<HTMLDivElement | null>(null);
   const tierDropdownRef = useRef<HTMLDivElement | null>(null);
   const countryDropdownRef = useRef<HTMLDivElement | null>(null);
   const searchModeDropdownRef = useRef<HTMLDivElement | null>(null);
+  const folderDropdownRef = useRef<HTMLDivElement | null>(null);
+  const searchBarRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    try {
-      const cached = window.sessionStorage.getItem(BROWSE_STATE_CACHE_KEY);
-      if (!cached) return;
-
-      const parsed = JSON.parse(cached);
-      const createdAt = Number(parsed?.createdAt || 0);
-      if (!createdAt || Date.now() - createdAt > BROWSE_STATE_TTL_MS) {
-        window.sessionStorage.removeItem(BROWSE_STATE_CACHE_KEY);
-        return;
-      }
-
-      if (Array.isArray(parsed?.creators) && parsed.creators.length) {
-        setAllCreators(parsed.creators);
-      }
-
-      if (parsed?.filters && typeof parsed.filters === "object") {
-        setFilters((prev) => ({ ...prev, ...parsed.filters }));
-      }
-
-      const cachedPage = Number(parsed?.frontendPage || 1);
-      if (Number.isFinite(cachedPage) && cachedPage > 0) {
-        setFrontendPage(cachedPage);
-      }
-    } catch (error) {
+    // Do not restore previous result lists automatically when switching tabs/pages.
+    // Search history is shown only in the Previous Searches section.
+    if (typeof window !== "undefined") {
       window.sessionStorage.removeItem(BROWSE_STATE_CACHE_KEY);
     }
   }, []);
@@ -2357,37 +2640,170 @@ export default function YouTubeBrowse() {
     };
   }, [showMoreFilters, countries.length]);
 
-  async function handleBookmarkCreator(creator: YouTubeCreator) {
+  async function openFolderSelection(
+    creator: YouTubeCreator,
+    options: { autoSaveSingleFolder?: boolean } = {},
+  ) {
     const keys = getCreatorBookmarkKeys(creator);
-    const primaryKey = keys[0];
-    const isAlreadyBookmarked = keys.some((key) => bookmarkedKeys.has(key));
-    const isAlreadyBookmarking = keys.some((key) => bookmarkingKeys.has(key));
+    const primaryKey = keys[0] || getCreatorBookmarkKey(creator);
 
-    if (!primaryKey || isAlreadyBookmarking || isAlreadyBookmarked) return;
+    setFolderError("");
+    setSavedFolderMessage("");
+    setNewFolderTitle("");
+    setFolderSearch("");
+    setShowFolderDropdown(false);
+    setSelectedFolderId("__bookmark__");
 
     try {
-      setBookmarkingKeys((current) => {
-        const next = new Set(current);
-        keys.forEach((key) => next.add(key));
-        return next;
-      });
-      setWarning("");
+      setFolderLoading(true);
+      setFolderModalCreator(creator);
 
-      await addBookmarkProfileRequest(creator, filters, brandId);
+      if (primaryKey) {
+        setBookmarkingKeys((current) => {
+          const next = new Set(current);
+          keys.forEach((key) => next.add(key));
+          return next;
+        });
+      }
 
+      const rows = await fetchBrandFoldersForSave(brandId || getBrandIdFromStorage());
+      const folders = rows.length
+        ? rows
+        : [{ id: "__bookmark__", title: "Bookmarked", name: "bookmarked", type: "bookmark", itemCount: 0, isDefault: true }];
+
+      setFolderOptions(folders);
+      const defaultFolder = folders.find((folder) => folder.type === "bookmark" || folder.isDefault) || folders[0];
+      setSelectedFolderId(defaultFolder?.id || "__bookmark__");
+
+      if (options.autoSaveSingleFolder && folders.length === 1 && defaultFolder) {
+        setFolderSaving(true);
+        await saveCreatorToFolder(defaultFolder, creator, filters, brandId || getBrandIdFromStorage());
+        setBookmarkedKeys((current) => {
+          const next = new Set(current);
+          keys.forEach((key) => next.add(key));
+          return next;
+        });
+        setSavedFolderMessage(getFolderSaveSuccessMessage(defaultFolder));
+      }
+    } catch (err: any) {
+      const fallback = [{ id: "__bookmark__", title: "Bookmarked", name: "bookmarked", type: "bookmark", itemCount: 0, isDefault: true }];
+      setFolderOptions(fallback);
+      setSelectedFolderId("__bookmark__");
+      setFolderError(err?.message || "Could not load folders. You can still save to Bookmarked.");
+    } finally {
+      setFolderLoading(false);
+      setFolderSaving(false);
+      if (primaryKey) {
+        setBookmarkingKeys((current) => {
+          const next = new Set(current);
+          keys.forEach((key) => next.delete(key));
+          return next;
+        });
+      }
+    }
+  }
+
+
+  function getFolderSaveSuccessMessage(
+    folder?: Partial<BrandFolderOption> | string | null,
+  ) {
+    const rawTitle =
+      typeof folder === "string"
+        ? folder
+        : String(folder?.title || folder?.name || "selected folder");
+
+    const folderTitle = rawTitle.trim() || "selected folder";
+    const normalizedTitle = folderTitle.toLowerCase();
+    const normalizedName =
+      typeof folder === "string" ? normalizedTitle : String(folder?.name || "").toLowerCase();
+    const normalizedType =
+      typeof folder === "string" ? "" : String(folder?.type || "").toLowerCase();
+    const normalizedId =
+      typeof folder === "string" ? "" : String(folder?.id || "").toLowerCase();
+
+    const isHubSave =
+      normalizedType === "bookmark" ||
+      normalizedType === "hub" ||
+      normalizedId === "__bookmark__" ||
+      normalizedTitle === "bookmarked" ||
+      normalizedTitle === "bookmark" ||
+      normalizedTitle === "hub" ||
+      normalizedName === "bookmarked" ||
+      normalizedName === "bookmark" ||
+      normalizedName === "hub";
+
+    if (isHubSave) {
+      return "Influencer added to Hub successfully.";
+    }
+
+    return `Influencer saved to ${folderTitle}.`;
+  }
+
+  async function handleCreateFolderAndSave() {
+    if (!folderModalCreator) return;
+    const title = newFolderTitle.trim();
+    if (!title) {
+      setFolderError("Enter a folder name.");
+      return;
+    }
+
+    try {
+      setFolderSaving(true);
+      setFolderError("");
+      const data = await createBrandFolderForSave(title, folderModalCreator, filters, brandId || getBrandIdFromStorage());
+      const createdFolder = data?.data?.folder || data?.data || {};
+      const folderTitle = String(createdFolder.title || createdFolder.name || title);
+      const keys = getCreatorBookmarkKeys(folderModalCreator);
       setBookmarkedKeys((current) => {
         const next = new Set(current);
         keys.forEach((key) => next.add(key));
         return next;
       });
+      setSavedFolderMessage(getFolderSaveSuccessMessage({ title: folderTitle, name: folderTitle, type: "folder" }));
+      setShowFolderDropdown(false);
+      setFolderSearch("");
+      const refreshedFolders = await fetchBrandFoldersForSave(brandId || getBrandIdFromStorage()).catch(() => folderOptions);
+      setFolderOptions(refreshedFolders);
+      const createdOption = refreshedFolders.find(
+        (folder) => folder.title.toLowerCase() === folderTitle.toLowerCase() || folder.name.toLowerCase() === folderTitle.toLowerCase(),
+      );
+      setSelectedFolderId(createdOption?.id || "__create_new__");
+      setNewFolderTitle("");
     } catch (err: any) {
-      setWarning(err?.message || "Failed to bookmark profile");
+      setFolderError(err?.message || "Failed to create folder.");
     } finally {
-      setBookmarkingKeys((current) => {
+      setFolderSaving(false);
+    }
+  }
+
+  async function handleSaveToSelectedFolder() {
+    if (!folderModalCreator) return;
+
+    if (selectedFolderId === "__create_new__") {
+      await handleCreateFolderAndSave();
+      return;
+    }
+
+    const selected = folderOptions.find((folder) => folder.id === selectedFolderId) || folderOptions[0];
+    if (!selected) return;
+
+    try {
+      setFolderSaving(true);
+      setFolderError("");
+      await saveCreatorToFolder(selected, folderModalCreator, filters, brandId || getBrandIdFromStorage());
+      const keys = getCreatorBookmarkKeys(folderModalCreator);
+      setBookmarkedKeys((current) => {
         const next = new Set(current);
-        keys.forEach((key) => next.delete(key));
+        keys.forEach((key) => next.add(key));
         return next;
       });
+      setSavedFolderMessage(getFolderSaveSuccessMessage(selected));
+      setShowFolderDropdown(false);
+      setFolderSearch("");
+    } catch (err: any) {
+      setFolderError(err?.message || "Failed to save influencer.");
+    } finally {
+      setFolderSaving(false);
     }
   }
 
@@ -2431,6 +2847,14 @@ export default function YouTubeBrowse() {
     [filters.country, countries],
   );
 
+  const filteredCategoryOptions = useMemo(() => {
+    const query = categorySearch.trim().toLowerCase();
+    return (query
+      ? YOUTUBE_CATEGORIES.filter((category) => category.toLowerCase().includes(query))
+      : YOUTUBE_CATEGORIES
+    );
+  }, [categorySearch]);
+
   const filteredCountryOptions = useMemo(() => {
     const query = countrySearch.trim().toLowerCase();
     const rows = query
@@ -2442,6 +2866,26 @@ export default function YouTubeBrowse() {
 
     return rows.slice(0, 120);
   }, [countries, countrySearch]);
+
+  const filteredFolderOptions = useMemo(() => {
+    const query = folderSearch.trim().toLowerCase();
+    if (!query) return folderOptions;
+
+    return folderOptions.filter((folder) => {
+      const haystack = `${folder.title} ${folder.name}`.toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [folderOptions, folderSearch]);
+
+  const selectedFolderOption = useMemo(() => {
+    if (selectedFolderId === "__create_new__") return null;
+    return folderOptions.find((folder) => folder.id === selectedFolderId) || folderOptions[0] || null;
+  }, [folderOptions, selectedFolderId]);
+
+  const selectedFolderLabel =
+    selectedFolderId === "__create_new__"
+      ? "Create New Folder"
+      : selectedFolderOption?.title || "Select folder";
 
   const sortedCreators = useMemo(() => {
     if (filters.searchMode === "script" && queueStatus) {
@@ -2465,6 +2909,12 @@ export default function YouTubeBrowse() {
   const queueProgressTarget = queueStatus
     ? Math.max(1, Number(queueStatus.target || BROWSE_MIN_RESULTS))
     : BROWSE_MIN_RESULTS;
+  const showBrowseProgress = Boolean(
+    filters.searchMode === "script" && (loading || (queueStatus && !queueStatus.done))
+  );
+  const waitingForFirstScriptResult = Boolean(
+    filters.searchMode === "script" && loading && creators.length === 0
+  );
 
   async function loadCreators(nextFilters: Partial<Filters> = filters) {
     const mergedFilters = {
@@ -2518,6 +2968,10 @@ export default function YouTubeBrowse() {
 
       if (!isQueued) {
         setWarning(firstResponse.warning || "");
+        const readyCreators = getCreatorsFromApiResponse(firstResponse);
+        if (readyCreators.length) {
+          setPreviousSearches(saveBrowseSearchHistory({ filters: normalizeHistoryFilters(mergedFilters), creators: readyCreators }));
+        }
         return;
       }
 
@@ -2544,6 +2998,10 @@ export default function YouTubeBrowse() {
       }
 
       setWarning(latestResponse.warning || "");
+      const finalCreatorsForHistory = getCreatorsFromApiResponse(latestResponse);
+      if (activeSearchMode === "script" && finalCreatorsForHistory.length) {
+        setPreviousSearches(saveBrowseSearchHistory({ filters: normalizeHistoryFilters(mergedFilters), creators: finalCreatorsForHistory }));
+      }
     } catch (err: any) {
       setError(err?.message || "Failed to fetch");
       if (activeSearchMode !== "script") {
@@ -2565,7 +3023,9 @@ export default function YouTubeBrowse() {
         tierDropdownRef.current,
         countryDropdownRef.current,
         searchModeDropdownRef.current,
+        folderDropdownRef.current,
       ].some((node) => node?.contains(target));
+      const clickedInsideSearchBar = Boolean(searchBarRef.current?.contains(target));
 
       if (!clickedInsideDropdown) {
         setShowCategoryDropdown(false);
@@ -2573,6 +3033,11 @@ export default function YouTubeBrowse() {
         setShowTierDropdown(false);
         setShowCountryDropdown(false);
         setShowSearchModeDropdown(false);
+        setShowFolderDropdown(false);
+      }
+
+      if (!clickedInsideSearchBar) {
+        setShowPreviousSearches(false);
       }
     }
 
@@ -2584,9 +3049,18 @@ export default function YouTubeBrowse() {
 
   function updateFilter<K extends keyof Filters>(key: K, value: Filters[K]) {
     setFilters((prev) => ({ ...prev, [key]: value, page: 1 }));
+    if (key === "searchMode") {
+      setAllCreators([]);
+      setFrontendPage(1);
+      setWarning("");
+      setError("");
+      setQueueStatus(null);
+      scriptQueueRunRef.current += 1;
+    }
   }
 
   function handleSearch() {
+    setShowPreviousSearches(false);
     const next = { ...filters, page: 1, limit: DISCOVERY_FETCH_LIMIT };
 
     if (!hasSearchCriteria(next, campaignId)) {
@@ -2622,6 +3096,7 @@ export default function YouTubeBrowse() {
     setCountrySearch("");
     setShowCountryDropdown(false);
     setShowSearchModeDropdown(false);
+    setShowPreviousSearches(false);
   }
 
   function handleResetAll() {
@@ -2633,6 +3108,7 @@ export default function YouTubeBrowse() {
     setShowTierDropdown(false);
     setShowCountryDropdown(false);
     setShowSearchModeDropdown(false);
+    setShowPreviousSearches(false);
     setCountrySearch("");
     setWarning("");
     setError("");
@@ -2682,7 +3158,7 @@ export default function YouTubeBrowse() {
       <div className="w-full min-w-0">
         <div className="border-b border-r border-[#D6D6D6] bg-white px-8 py-4 shadow-[0_2px_4px_-2px_rgba(0,0,0,0.08),0_4px_8px_-2px_rgba(0,0,0,0.04)]">
           <div className="flex w-full items-center justify-end gap-4">
-          <div className="flex h-[56px] min-w-0 flex-1 items-center rounded-[12px] border border-[#E6E6E6] bg-white px-4">
+          <div ref={searchBarRef} className="relative flex h-[56px] min-w-0 flex-1 items-center rounded-[12px] border border-[#E6E6E6] bg-white px-4">
 
             <div ref={searchModeDropdownRef} className="relative shrink-0">
               <button
@@ -2693,6 +3169,7 @@ export default function YouTubeBrowse() {
                   setShowMoreFilters(false);
                   setShowTierDropdown(false);
                   setShowCountryDropdown(false);
+                  setShowPreviousSearches(false);
                 }}
                 className="flex h-8 items-center gap-1.5 rounded-[10px] bg-[#faf7f2] px-3 text-[13px] font-semibold text-black transition hover:bg-[#f4eee6]"
               >
@@ -2702,7 +3179,7 @@ export default function YouTubeBrowse() {
                   <Sparkles className="h-4 w-4 text-[#9a6500]" />
                 )}
                 <span className="whitespace-nowrap">
-                  {filters.searchMode === "channel" ? "Channel" : "Script"}
+                  {filters.searchMode === "channel" ? "Search channel" : "Discover creators"}
                 </span>
                 <ChevronDown
                   className={`h-4 w-4 shrink-0 transition ${
@@ -2722,8 +3199,15 @@ export default function YouTubeBrowse() {
                         category: "",
                         page: 1,
                       }));
+                      setAllCreators([]);
+                      setFrontendPage(1);
+                      setQueueStatus(null);
+                      setWarning("");
+                      setError("");
+                      scriptQueueRunRef.current += 1;
                       setShowCategoryDropdown(false);
                       setShowSearchModeDropdown(false);
+                      setShowPreviousSearches(false);
                     }}
                     className={`flex w-full items-start gap-3 px-4 py-3 text-left text-sm hover:bg-[#faf6f1] ${
                       filters.searchMode === "channel"
@@ -2735,7 +3219,7 @@ export default function YouTubeBrowse() {
                     <span>
                       <span className="block font-semibold">Channel search</span>
                       <span className="mt-0.5 block text-xs text-[#7d725f]">
-                        Fast YouTube API channel results, no script.
+                        Search a known creator or channel directly.
                       </span>
                     </span>
                   </button>
@@ -2745,6 +3229,7 @@ export default function YouTubeBrowse() {
                     onClick={() => {
                       updateFilter("searchMode", "script");
                       setShowSearchModeDropdown(false);
+                      setShowPreviousSearches(false);
                     }}
                     className={`flex w-full items-start gap-3 px-4 py-3 text-left text-sm hover:bg-[#faf6f1] ${
                       filters.searchMode === "script"
@@ -2754,9 +3239,9 @@ export default function YouTubeBrowse() {
                   >
                     <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-[#9a6500]" />
                     <span>
-                      <span className="block font-semibold">Run script</span>
+                      <span className="block font-semibold">Discover creators</span>
                       <span className="mt-0.5 block text-xs text-[#7d725f]">
-                        Use script-based discovery for deeper creator matching.
+                        Find creators for your brand with deeper matching.
                       </span>
                     </span>
                   </button>
@@ -2768,7 +3253,22 @@ export default function YouTubeBrowse() {
 
             <input
               value={filters.keyword}
-              onChange={(e) => updateFilter("keyword", e.target.value)}
+              onChange={(e) => {
+                updateFilter("keyword", e.target.value);
+                if (filters.searchMode === "script" && previousSearches.length > 0) {
+                  setShowPreviousSearches(true);
+                }
+              }}
+              onFocus={() => {
+                if (filters.searchMode === "script" && previousSearches.length > 0) {
+                  setShowPreviousSearches(true);
+                }
+              }}
+              onClick={() => {
+                if (filters.searchMode === "script" && previousSearches.length > 0) {
+                  setShowPreviousSearches(true);
+                }
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
@@ -2778,6 +3278,43 @@ export default function YouTubeBrowse() {
               placeholder={getSearchInputPlaceholder(filters.searchMode)}
               className="h-full min-w-0 flex-1 bg-transparent text-[15px] text-black outline-none placeholder:text-[#B3B3B3]"
             />
+
+
+            {showPreviousSearches && filters.searchMode === "script" && previousSearches.length > 0 ? (
+              <div className="absolute left-0 top-[calc(100%+8px)] z-[140] w-full max-w-[420px] overflow-hidden rounded-[14px] border border-[#E6E6E6] bg-white py-2 shadow-[0_16px_36px_rgba(0,0,0,0.12)] sm:left-[190px] sm:w-[380px]">
+                <div className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#8A8A8A]">
+                  Recent searches
+                </div>
+
+                <div className="max-h-[232px] overflow-y-auto">
+                  {previousSearches.slice(0, 8).map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => {
+                        scriptQueueRunRef.current += 1;
+                        setFilters(item.filters);
+                        setAllCreators(item.creators);
+                        setFrontendPage(1);
+                        setQueueStatus(null);
+                        setWarning("");
+                        setError("");
+                        setShowPreviousSearches(false);
+                      }}
+                      className="flex w-full cursor-pointer items-center justify-between gap-3 px-3 py-2.5 text-left text-[13px] transition hover:bg-[#F7F7F7]"
+                    >
+                      <span className="min-w-0 flex items-center gap-2">
+                        <Search className="h-3.5 w-3.5 shrink-0 text-[#8A8A8A]" />
+                        <span className="truncate font-medium text-black">{item.label}</span>
+                      </span>
+                      <span className="shrink-0 text-[12px] text-[#777777]">
+                        {item.creators.length}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
 
           </div>
 
@@ -2802,7 +3339,7 @@ export default function YouTubeBrowse() {
               className={`flex h-[56px] w-full items-center justify-between gap-2 rounded-[12px] border border-[#E6E6E6] bg-white px-4 text-[16px] font-medium text-black outline-none transition ${
                 filters.searchMode === "channel"
                   ? "cursor-not-allowed"
-                  : "hover:bg-[#F7F7F7]"
+                  : "hover:border-[#D8D8D8] hover:bg-[#F7F7F7]"
               }`}
             >
               <span className="max-w-[145px] truncate">
@@ -2816,44 +3353,55 @@ export default function YouTubeBrowse() {
             </button>
 
             {filters.searchMode !== "channel" && showCategoryDropdown && (
-              <div className="absolute left-0 top-[calc(100%+8px)] z-[90] w-[300px] overflow-hidden rounded-[18px] border border-[#e6d9cc] bg-white shadow-2xl">
-                <button
-                  type="button"
-                  onClick={() => handleCategorySelect("")}
-                  className={`flex w-full items-center justify-between px-4 py-3 text-left text-sm font-medium hover:bg-[#faf6f1] ${
-                    !filters.category
-                      ? "bg-[#f7efe6] text-black"
-                      : "text-[#555]"
-                  }`}
-                >
-                  All categories
-                  {!filters.category && (
-                    <span className="rounded-full bg-black px-2 py-0.5 text-[10px] text-white">
-                      Selected
-                    </span>
-                  )}
-                </button>
+              <div className="absolute left-0 top-[calc(100%+8px)] z-[90] w-[220px] overflow-hidden rounded-[10px] border border-[#D8D8D8] bg-white p-2 shadow-[0_18px_45px_rgba(0,0,0,0.12)]">
+                <div className="mb-2 flex h-[32px] items-center rounded-[6px] border border-[#D6D6D6] bg-white px-2.5">
+                  <Search className="mr-2 h-4 w-4 shrink-0 text-[#4f4f4f]" />
+                  <input
+                    value={categorySearch}
+                    onChange={(event) => setCategorySearch(event.target.value)}
+                    placeholder="Search..."
+                    className="h-full min-w-0 flex-1 bg-transparent text-[14px] text-black outline-none placeholder:text-[#8A8A8A]"
+                    autoFocus
+                  />
+                </div>
 
-                <div className="max-h-[310px] overflow-y-auto py-1">
-                  {YOUTUBE_CATEGORIES.map((category) => {
+                <div className="max-h-[330px] overflow-y-auto pr-1">
+                  <button
+                    type="button"
+                    onClick={() => handleCategorySelect("")}
+                    className={`flex min-h-[32px] w-full items-center justify-between rounded-[6px] px-2 text-left text-[14px] font-medium transition hover:bg-[#EFEFEF] ${
+                      !filters.category
+                        ? "bg-[#D9D9D9] text-black"
+                        : "text-[#2f2f2f]"
+                    }`}
+                  >
+                    <span className="truncate">All categories</span>
+                    {!filters.category ? (
+                      <span className="ml-2 rounded-full bg-black px-2 py-0.5 text-[10px] font-semibold text-white">
+                        Selected
+                      </span>
+                    ) : null}
+                  </button>
+
+                  {filteredCategoryOptions.map((category) => {
                     const selected = filters.category === category;
                     return (
                       <button
                         key={category}
                         type="button"
                         onClick={() => handleCategorySelect(category)}
-                        className={`flex w-full items-center justify-between px-4 py-2.5 text-left text-sm hover:bg-[#faf6f1] ${
+                        className={`mt-1 flex min-h-[32px] w-full items-center justify-between rounded-[6px] px-2 text-left text-[14px] transition hover:bg-[#EFEFEF] ${
                           selected
-                            ? "bg-[#f7efe6] font-semibold text-black"
-                            : "text-[#555]"
+                            ? "bg-[#D9D9D9] font-semibold text-black"
+                            : "text-[#2f2f2f]"
                         }`}
                       >
                         <span className="truncate">{category}</span>
-                        {selected && (
-                          <span className="ml-3 rounded-full bg-black px-2 py-0.5 text-[10px] text-white">
+                        {selected ? (
+                          <span className="ml-2 rounded-full bg-black px-2 py-0.5 text-[10px] font-semibold text-white">
                             Selected
                           </span>
-                        )}
+                        ) : null}
                       </button>
                     );
                   })}
@@ -2883,7 +3431,7 @@ export default function YouTubeBrowse() {
               className={`flex h-[56px] w-full items-center justify-between gap-2 rounded-[12px] border border-[#E6E6E6] bg-white px-4 text-[16px] font-medium text-black transition ${
                 filters.searchMode === "channel"
                   ? "cursor-not-allowed"
-                  : "hover:bg-[#F7F7F7]"
+                  : "hover:border-[#d8cfc5] hover:bg-[#FFF8E8]"
               }`}
             >
               <span className="truncate">More filters</span>
@@ -2895,109 +3443,92 @@ export default function YouTubeBrowse() {
             </button>
 
             {filters.searchMode !== "channel" && showMoreFilters && (
-              <div className="absolute right-0 top-[calc(100%+10px)] z-50 w-[640px] overflow-visible rounded-[26px] border border-[#eadfd3] bg-white shadow-[0_24px_80px_rgba(28,18,8,0.18)]">
-                <div className="rounded-t-[26px] bg-gradient-to-r from-[#fff8ea] via-white to-[#f7f2ed] px-6 py-5">
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#9a6500]">
-                        Creator discovery
-                      </p>
-                      <h3 className="mt-1 text-[22px] font-bold text-black">
-                        Refine YouTube creators
-                      </h3>
-                      <p className="mt-1 text-sm text-[#766b60]">
-                        Select tier and country from clean dropdowns. Country sends the country code in API payload.
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowMoreFilters(false);
-                        setShowTierDropdown(false);
-                        setShowCountryDropdown(false);
-                      }}
-                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#eadfd3] bg-white text-black shadow-sm"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  </div>
-                </div>
-
-                <div className="px-6 py-6">
-                  <div className="grid grid-cols-2 gap-5">
-                    <div>
-                      <label className="mb-2 block text-sm font-semibold text-black">
-                        Subscriber tier
-                      </label>
-                      <div ref={tierDropdownRef} className="relative">
-                        <button
-                          type="button"
-                          onClick={() => setShowTierDropdown((prev) => !prev)}
-                          className="flex h-12 w-full items-center justify-between gap-3 rounded-full border border-[#ddd] bg-white px-4 text-left text-sm text-black outline-none transition hover:border-[#c9b8a6]"
-                        >
-                          <span className="truncate">
-                            {filters.subscriberTier
-                              ? getTierLabelWithRange(filters.subscriberTier)
-                              : "Any tier"}
-                          </span>
-                          <ChevronDown
-                            className={`h-4 w-4 shrink-0 transition ${
-                              showTierDropdown ? "rotate-180" : ""
+              <div className="absolute right-0 top-[calc(100%+10px)] z-50 w-[704px] rounded-[8px] border border-[#E4E0D8] bg-white px-7 py-7 shadow-[0_18px_48px_rgba(0,0,0,0.14)]">
+                <div className="space-y-6">
+                  <div className="grid grid-cols-[210px_1fr] items-center gap-8">
+                    <label className="text-[16px] font-semibold text-[#222222]">
+                      Search Mode
+                    </label>
+                    <div className="ml-auto grid h-[48px] w-[260px] grid-cols-2 rounded-[10px] bg-[#F0F0F0] p-1">
+                      {([
+                        { value: "channel", label: "Channel" },
+                        { value: "script", label: "Script" },
+                      ] as Array<{ value: SearchMode; label: string }>).map((option) => {
+                        const selected = filters.searchMode === option.value;
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => {
+                              updateFilter("searchMode", option.value);
+                              if (option.value === "channel") {
+                                setShowMoreFilters(false);
+                              }
+                            }}
+                            className={`rounded-[8px] text-[14px] font-medium transition ${
+                              selected
+                                ? "bg-black text-white shadow-sm"
+                                : "text-[#888888] hover:bg-[#FFF3C4] hover:text-black"
                             }`}
-                          />
-                        </button>
-
-                        {showTierDropdown && (
-                          <div className="absolute left-0 top-[calc(100%+8px)] z-[100] w-full overflow-hidden rounded-[16px] border border-[#e6d9cc] bg-white shadow-xl">
-                            <button
-                              type="button"
-                              onClick={() => handleTierSelect("")}
-                              className={`block w-full px-4 py-3 text-left text-sm hover:bg-[#faf6f1] ${
-                                !filters.subscriberTier
-                                  ? "bg-[#f7efe6] font-semibold text-black"
-                                  : "text-[#555]"
-                              }`}
-                            >
-                              Any tier
-                            </button>
-
-                            {SUBSCRIBER_TIERS.map((tier) => {
-                              const selected =
-                                filters.subscriberTier === tier.value;
-                              return (
-                                <button
-                                  key={tier.value}
-                                  type="button"
-                                  onClick={() => handleTierSelect(tier.value)}
-                                  className={`block w-full px-4 py-3 text-left text-sm hover:bg-[#faf6f1] ${
-                                    selected
-                                      ? "bg-[#f7efe6] font-semibold text-black"
-                                      : "text-[#555]"
-                                  }`}
-                                >
-                                  {tier.label} ({tier.rangeLabel})
-                                </button>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
+                          >
+                            {option.label}
+                          </button>
+                        );
+                      })}
                     </div>
+                  </div>
 
-                    <div ref={countryDropdownRef} className="relative">
-                      <label className="mb-2 block text-sm font-semibold text-black">
-                        Country
-                      </label>
+                  <div className="grid grid-cols-[210px_1fr] items-center gap-8">
+                    <label className="text-[16px] font-semibold text-[#222222]">
+                      Subscriber Tier
+                    </label>
+                    <div className="ml-auto grid h-[48px] w-[392px] grid-cols-6 rounded-[10px] bg-[#F0F0F0] p-1">
+                      <button
+                        type="button"
+                        onClick={() => handleTierSelect("")}
+                        className={`rounded-[8px] text-[14px] font-medium transition ${
+                          !filters.subscriberTier
+                            ? "bg-black text-white shadow-sm"
+                            : "text-[#888888] hover:bg-[#FFF3C4] hover:text-black"
+                        }`}
+                      >
+                        Any
+                      </button>
+                      {SUBSCRIBER_TIERS.map((tier) => {
+                        const selected = filters.subscriberTier === tier.value;
+                        return (
+                          <button
+                            key={tier.value}
+                            type="button"
+                            onClick={() => handleTierSelect(tier.value)}
+                            className={`rounded-[8px] text-[14px] font-medium transition ${
+                              selected
+                                ? "bg-black text-white shadow-sm"
+                                : "text-[#888888] hover:bg-[#FFF3C4] hover:text-black"
+                            }`}
+                          >
+                            {tier.label.replace("Mid-tier", "Mid")}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-[210px_1fr] items-center gap-8">
+                    <label className="text-[16px] font-semibold text-[#222222]">
+                      Country
+                    </label>
+                    <div ref={countryDropdownRef} className="relative ml-auto w-[392px]">
                       <button
                         type="button"
                         onClick={() => {
                           setShowCountryDropdown((prev) => !prev);
                           setShowTierDropdown(false);
                         }}
-                        className="flex h-12 w-full items-center justify-between gap-3 rounded-full border border-[#ddd] bg-white px-4 text-left text-sm text-black outline-none transition hover:border-[#c9b8a6]"
+                        className="flex h-[48px] w-full items-center justify-between gap-3 rounded-[10px] bg-[#F0F0F0] px-4 text-left text-[14px] font-medium text-black transition hover:bg-[#FFF3C4]"
                       >
-                        <span className={`truncate ${filters.country ? "text-black" : "text-[#777]"}`}>
-                          {filters.country ? selectedCountryLabel : "Select country"}
+                        <span className={`truncate ${filters.country ? "text-black" : "text-[#888888]"}`}>
+                          {filters.country ? selectedCountryLabel : "Any country"}
                         </span>
                         <ChevronDown
                           className={`h-4 w-4 shrink-0 transition ${
@@ -3007,44 +3538,42 @@ export default function YouTubeBrowse() {
                       </button>
 
                       {showCountryDropdown && (
-                        <div className="absolute left-0 top-[calc(100%+8px)] z-[110] w-full overflow-hidden rounded-[18px] border border-[#e6d9cc] bg-white shadow-2xl">
-                          <div className="border-b border-[#f0e8df] p-3">
-                            <div className="flex h-10 items-center rounded-full border border-[#e6d9cc] bg-[#faf7f2] px-3">
-                              <Search className="mr-2 h-4 w-4 text-[#8a8179]" />
-                              <input
-                                value={countrySearch}
-                                onChange={(event) => setCountrySearch(event.target.value)}
-                                placeholder="Search country or code"
-                                className="h-full flex-1 bg-transparent text-sm outline-none placeholder:text-[#9a9288]"
-                                autoFocus
-                              />
-                            </div>
+                        <div className="absolute left-0 top-[calc(100%+8px)] z-[110] w-full overflow-hidden rounded-[10px] border border-[#D8D8D8] bg-white p-2 shadow-[0_18px_45px_rgba(0,0,0,0.12)]">
+                          <div className="mb-2 flex h-[32px] items-center rounded-[6px] border border-[#D6D6D6] bg-white px-2.5">
+                            <Search className="mr-2 h-4 w-4 text-[#4f4f4f]" />
+                            <input
+                              value={countrySearch}
+                              onChange={(event) => setCountrySearch(event.target.value)}
+                              placeholder="Search country..."
+                              className="h-full flex-1 bg-transparent text-[14px] outline-none placeholder:text-[#8A8A8A]"
+                              autoFocus
+                            />
                           </div>
 
                           <button
                             type="button"
                             onClick={() => handleCountrySelect("")}
-                            className={`flex w-full items-center justify-between px-4 py-3 text-left text-sm hover:bg-[#faf6f1] ${
+                            className={`flex min-h-[32px] w-full items-center justify-between rounded-[6px] px-2 text-left text-[14px] transition hover:bg-[#FFF3C4] ${
                               !filters.country
-                                ? "bg-[#f7efe6] font-semibold text-black"
-                                : "text-[#555]"
+                                ? "bg-[#D9D9D9] font-semibold text-black"
+                                : "text-[#2f2f2f]"
                             }`}
                           >
                             <span>Any country</span>
                             {!filters.country ? (
-                              <span className="rounded-full bg-black px-2 py-0.5 text-[10px] text-white">
+                              <span className="ml-2 rounded-full bg-black px-2 py-0.5 text-[10px] font-semibold text-white">
                                 Selected
                               </span>
                             ) : null}
                           </button>
 
-                          <div className="max-h-[260px] overflow-y-auto py-1">
+                          <div className="max-h-[260px] overflow-y-auto pr-1">
                             {countriesLoading ? (
-                              <div className="px-4 py-5 text-sm text-[#777]">
+                              <div className="px-2 py-5 text-sm text-[#777]">
                                 Loading countries...
                               </div>
                             ) : countryError ? (
-                              <div className="px-4 py-4 text-sm text-[#b91c1c]">
+                              <div className="px-2 py-4 text-sm text-[#b91c1c]">
                                 {countryError}
                               </div>
                             ) : filteredCountryOptions.length ? (
@@ -3055,24 +3584,24 @@ export default function YouTubeBrowse() {
                                     key={country._id || country.countryCode}
                                     type="button"
                                     onClick={() => handleCountrySelect(country.countryCode)}
-                                    className={`flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left text-sm hover:bg-[#faf6f1] ${
+                                    className={`mt-1 flex min-h-[32px] w-full items-center justify-between gap-3 rounded-[6px] px-2 text-left text-[14px] transition hover:bg-[#FFF3C4] ${
                                       selected
-                                        ? "bg-[#f7efe6] font-semibold text-black"
-                                        : "text-[#555]"
+                                        ? "bg-[#D9D9D9] font-semibold text-black"
+                                        : "text-[#2f2f2f]"
                                     }`}
                                   >
                                     <span className="flex min-w-0 items-center gap-2">
-                                      <span className="text-lg leading-none">{country.flag || "🌐"}</span>
+                                      <span className="text-base leading-none">{country.flag || "🌐"}</span>
                                       <span className="truncate">{country.countryName}</span>
                                     </span>
-                                    <span className="shrink-0 rounded-full bg-[#f4f0ea] px-2 py-0.5 text-[11px] font-bold text-[#6f6258]">
+                                    <span className="shrink-0 text-[12px] font-semibold text-[#767676]">
                                       {country.countryCode}
                                     </span>
                                   </button>
                                 );
                               })
                             ) : (
-                              <div className="px-4 py-5 text-sm text-[#777]">
+                              <div className="px-2 py-5 text-sm text-[#777]">
                                 No country found
                               </div>
                             )}
@@ -3080,65 +3609,56 @@ export default function YouTubeBrowse() {
                         </div>
                       )}
                     </div>
-
-                    <div>
-                      <label className="mb-2 block text-sm font-semibold text-black">
-                        Min avg views
-                      </label>
-                      <input
-                        type="number"
-                        value={filters.minAvgViews}
-                        onChange={(e) =>
-                          updateFilter("minAvgViews", e.target.value)
-                        }
-                        placeholder="5000"
-                        className="h-12 w-full rounded-full border border-[#ddd] bg-white px-4 text-sm text-black outline-none"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="mb-2 block text-sm font-semibold text-black">
-                        Min engagement %
-                      </label>
-                      <input
-                        type="number"
-                        value={filters.minEngagement}
-                        onChange={(e) =>
-                          updateFilter("minEngagement", e.target.value)
-                        }
-                        placeholder="2"
-                        className="h-12 w-full rounded-full border border-[#ddd] bg-white px-4 text-sm text-black outline-none"
-                      />
-                    </div>
                   </div>
 
-                  <div className="mt-6 flex justify-between gap-3">
+                  <div className="grid grid-cols-[210px_1fr] items-center gap-8">
+                    <label className="text-[16px] font-semibold text-[#222222]">
+                      Min Avg Views
+                    </label>
+                    <input
+                      type="number"
+                      value={filters.minAvgViews}
+                      onChange={(e) =>
+                        updateFilter("minAvgViews", e.target.value)
+                      }
+                      placeholder="5000"
+                      className="ml-auto h-[48px] w-[392px] rounded-[10px] bg-[#F0F0F0] px-5 text-[14px] font-medium text-black outline-none placeholder:text-[#888888] transition hover:bg-[#FFF3C4] focus:bg-white focus:ring-1 focus:ring-black"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-[210px_1fr] items-center gap-8">
+                    <label className="text-[16px] font-semibold text-[#222222]">
+                      Min Engagement %
+                    </label>
+                    <input
+                      type="number"
+                      value={filters.minEngagement}
+                      onChange={(e) =>
+                        updateFilter("minEngagement", e.target.value)
+                      }
+                      placeholder="2"
+                      className="ml-auto h-[48px] w-[392px] rounded-[10px] bg-[#F0F0F0] px-5 text-[14px] font-medium text-black outline-none placeholder:text-[#888888] transition hover:bg-[#FFF3C4] focus:bg-white focus:ring-1 focus:ring-black"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-end gap-4 pt-1">
                     <button
                       type="button"
-                      onClick={handleResetAll}
-                      className="rounded-xl border border-[#ddd] bg-white px-5 py-2.5 text-sm font-medium text-black"
+                      onClick={handleClearFilters}
+                      className="rounded-[12px] px-5 py-3 text-[15px] font-medium text-black transition hover:bg-[#FFF3C4]"
                     >
-                      Reset all
+                      Clear
                     </button>
-                    <div className="flex gap-3">
-                      <button
-                        type="button"
-                        onClick={handleClearFilters}
-                        className="rounded-xl border border-[#ddd] bg-white px-5 py-2.5 text-sm font-medium text-black"
-                      >
-                        Clear
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowMoreFilters(false);
-                          handleSearch();
-                        }}
-                        className="rounded-xl bg-black px-7 py-2.5 text-sm font-medium text-white"
-                      >
-                        Apply
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowMoreFilters(false);
+                        handleSearch();
+                      }}
+                      className="rounded-[12px] bg-black px-8 py-3 text-[15px] font-semibold text-white transition hover:bg-[#FFF3C4] hover:text-black"
+                    >
+                      Apply
+                    </button>
                   </div>
                 </div>
               </div>
@@ -3149,9 +3669,9 @@ export default function YouTubeBrowse() {
             type="button"
             onClick={handleSearch}
             disabled={loading}
-            className="flex h-[56px] w-[128px] shrink-0 items-center justify-center gap-2 rounded-[12px] bg-black px-5 text-[15px] font-semibold text-white transition hover:bg-[#222222] disabled:cursor-not-allowed disabled:bg-[#B8B8B8]"
+            className="flex h-[56px] w-[112px] shrink-0 items-center justify-center gap-2 rounded-[12px] bg-black px-4 text-[14px] font-semibold text-white transition hover:bg-[#222222] disabled:cursor-not-allowed disabled:bg-[#B8B8B8]"
           >
-            <Search className="h-[17px] w-[17px]" />
+            <Search className="h-4 w-4" />
             <span>Search</span>
           </button>
 
@@ -3177,7 +3697,6 @@ export default function YouTubeBrowse() {
           </div>
         )}
         </div>
-
         <div className="px-8 py-5">
       {warning && (
         <div className="mt-5 rounded-[18px] border border-[#f3d195] bg-[#fff8e8] px-5 py-3 text-[#946200]">
@@ -3190,16 +3709,16 @@ export default function YouTubeBrowse() {
         </div>
       )}
 
-      {(queueStatus || (loading && filters.searchMode === "script")) && filters.searchMode === "script" ? (
+      {showBrowseProgress ? (
         <div className="mt-5 mb-3 w-full">
           <div className="flex items-center justify-between text-[12px] font-medium text-[#9B9B9B]">
             <span>{queueProgressCount}</span>
             <span>{queueProgressTarget}</span>
           </div>
 
-          <div className="mt-3 h-px w-full overflow-hidden rounded-full bg-[#E6E6E6]">
+          <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-[#E6E6E6]">
             <div
-              className="h-full rounded-full bg-[#111111] transition-[width] duration-500 ease-out"
+              className="h-full rounded-full bg-[#22c55e] transition-[width] duration-500 ease-out"
               style={{ width: `${queueProgressPercent}%` }}
             />
           </div>
@@ -3207,25 +3726,22 @@ export default function YouTubeBrowse() {
         </div>
       ) : null}
 
-      {loading && creators.length === 0 ? (
-        filters.searchMode === "script" ? null : (
-          <div className="mt-5 rounded-[24px] bg-white">
-            <CreatorSearchLoader
-              topic={filters.keyword || filters.category || "YouTube channels"}
-            />
-          </div>
-        )
+      {(waitingForFirstScriptResult || (loading && creators.length === 0)) ? (
+        <div className="mt-5 rounded-[24px] bg-white">
+          <CreatorSearchLoader
+            topic={filters.keyword || filters.category || "YouTube channels"}
+          />
+          {filters.searchMode === "script" ? (
+            <p className="-mt-7 mb-8 text-center text-xs font-medium text-[#8a8179]">
+              Running discovery script. Results will appear as soon as the first creator is found.
+            </p>
+          ) : null}
+        </div>
       ) : creators.length === 0 ? (
         <CreatorEmptyState searched={hasSearchCriteria(filters, campaignId)} />
       ) : (
         <div className="mt-5">
-          <div className="mb-4 flex items-center justify-between px-1">
-            <h2 className="text-[20px] font-semibold text-black">
-              YouTube creators
-            </h2>
-          </div>
-
-          <div className="space-y-6">
+          <div className="space-y-5">
             {creators.map((creator) => {
               const authenticityScore = getCreatorAuthenticityScore(creator);
               const countryDisplay = getCreatorCountryDisplay(creator, countries);
@@ -3239,7 +3755,7 @@ export default function YouTubeBrowse() {
               return (
                 <div
                   key={creator.channelId}
-                  className="grid min-h-[108px] gap-4 rounded-[16px] border border-[#E6E6E6] bg-white px-5 py-4 text-sm text-black shadow-[0_2px_4px_-2px_rgba(0,0,0,0.08),0_4px_8px_-2px_rgba(0,0,0,0.04)] transition hover:bg-[#f7f7f7] lg:grid-cols-[minmax(300px,1.35fr)_minmax(130px,0.48fr)_160px_minmax(150px,0.52fr)_164px] lg:items-center"
+                  className="grid min-h-[108px] gap-4 rounded-[16px] border border-[#E6E6E6] bg-white px-5 py-4 text-sm text-black shadow-[0_2px_4px_-2px_rgba(0,0,0,0.08),0_4px_8px_-2px_rgba(0,0,0,0.04)] transition lg:grid-cols-[minmax(300px,1.35fr)_minmax(130px,0.48fr)_160px_minmax(150px,0.52fr)_164px] lg:items-center"
                 >
                   <div className="flex min-w-0 items-center gap-3">
                     <AvatarImage
@@ -3274,7 +3790,7 @@ export default function YouTubeBrowse() {
 
                   <div className="flex items-center gap-2 border-l border-[#eee5da] pl-5 font-medium text-[#4f463d]">
                     <span className="text-base">{countryDisplay.flag}</span>
-                    <span className="truncate">{countryDisplay.label}</span>
+                    <span className="whitespace-normal break-words leading-5">{countryDisplay.label}</span>
                   </div>
 
                   <div className="flex items-center gap-2">
@@ -3300,7 +3816,7 @@ export default function YouTubeBrowse() {
                         setShowTierDropdown(false);
                         openMediaKitPage(creator);
                       }}
-                      className="inline-flex h-11 items-center gap-1.5 rounded-[12px] bg-black px-4 text-[12px] font-semibold leading-none text-white transition hover:bg-[#1f1f1f]"
+                      className="inline-flex h-11 cursor-pointer items-center gap-1.5 rounded-[12px] bg-black px-4 text-[12px] font-semibold leading-none text-white transition hover:bg-[#1f1f1f]"
                     >
                       <Eye className="h-3.5 w-3.5" />
                       Insights
@@ -3312,11 +3828,11 @@ export default function YouTubeBrowse() {
                       onClick={(event) => {
                         event.preventDefault();
                         event.stopPropagation();
-                        handleBookmarkCreator(creator);
+                        openFolderSelection(creator, { autoSaveSingleFolder: true });
                       }}
-                      title={isBookmarked ? "Bookmarked" : "Bookmark creator"}
-                      aria-label={isBookmarked ? "Bookmarked" : "Bookmark creator"}
-                      className={`flex h-11 w-11 items-center justify-center rounded-[14px] border border-[#E6E6E6] bg-white transition hover:bg-[#f7f7f7] disabled:cursor-default ${
+                      title={isBookmarked ? "Saved" : "Save to folder"}
+                      aria-label={isBookmarked ? "Saved" : "Save to folder"}
+                      className={`flex h-11 w-11 cursor-pointer items-center justify-center rounded-[14px] border border-[#E6E6E6] bg-white transition hover:bg-[#f7f7f7] disabled:cursor-default ${
                         isBookmarked ? "text-[#f43f5e]" : "text-[#111111]"
                       }`}
                     >
@@ -3347,6 +3863,204 @@ export default function YouTubeBrowse() {
       )}
       </div>
       </div>
+
+
+      {folderModalCreator ? (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/35 px-4">
+          <div
+            className="w-full max-w-[512px] rounded-[24px] bg-white p-6 shadow-[0_22px_70px_rgba(0,0,0,0.18)]"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-[20px] font-semibold text-black">Save influencer</h3>
+                <p className="mt-2 text-sm leading-6 text-[#777777]">
+                  Choose an existing folder or create a new folder for this creator.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                disabled={folderSaving}
+                onClick={() => setFolderModalCreator(null)}
+                aria-label="Close folder modal"
+                title="Close"
+                className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-full bg-white text-[#555555] transition hover:bg-[#f7f7f7] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {folderLoading ? (
+              <div className="py-8">
+                <PlatformLoader label="Loading folders" />
+              </div>
+            ) : (
+              <div className="mt-7 space-y-5">
+                <div>
+                  <label className="text-xs font-medium text-[#777777]">
+                    Save to folder <span className="text-red-500">*</span>
+                  </label>
+
+                  <div ref={folderDropdownRef} className="relative mt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (folderSaving) return;
+                        setShowFolderDropdown((prev) => !prev);
+                        setFolderSearch("");
+                      }}
+                      disabled={folderSaving}
+                      className="flex h-11 w-full items-center justify-between gap-3 rounded-[9px] border border-[#D6D6D6] bg-white px-3 text-left text-sm text-black outline-none transition hover:border-black focus:border-black disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <span className="truncate">{selectedFolderLabel}</span>
+                      <ChevronDown
+                        className={`h-4 w-4 shrink-0 text-[#555555] transition ${
+                          showFolderDropdown ? "rotate-180" : ""
+                        }`}
+                      />
+                    </button>
+
+                    {showFolderDropdown ? (
+                      <div className="absolute left-0 top-[calc(100%+8px)] z-[130] w-[220px] overflow-hidden rounded-[12px] border border-[#D8D8D8] bg-white p-2 shadow-[0_18px_45px_rgba(0,0,0,0.14)]">
+                        <div className="mb-2 flex h-[40px] items-center rounded-[6px] border border-[#D6D6D6] bg-white px-3">
+                          <Search className="mr-2 h-4 w-4 shrink-0 text-[#4f4f4f]" />
+                          <input
+                            value={folderSearch}
+                            onChange={(event) => setFolderSearch(event.target.value)}
+                            placeholder="Search folder..."
+                            disabled={folderSaving}
+                            className="h-full min-w-0 flex-1 bg-transparent text-[14px] text-black outline-none placeholder:text-[#8A8A8A] disabled:cursor-not-allowed"
+                            autoFocus
+                          />
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => setFolderSearch("")}
+                          className={`mb-1 flex min-h-[32px] w-full items-center rounded-[6px] px-2 text-left text-[14px] transition hover:bg-[#EFEFEF] ${
+                            !folderSearch.trim() ? "bg-[#D9D9D9] text-black" : "text-[#2f2f2f]"
+                          }`}
+                        >
+                          All
+                        </button>
+
+                        <div className="max-h-[178px] overflow-y-auto pr-1">
+                          {filteredFolderOptions.length ? (
+                            filteredFolderOptions.map((folder) => {
+                              const selected = selectedFolderId === folder.id;
+                              return (
+                                <button
+                                  key={folder.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedFolderId(folder.id);
+                                    setShowFolderDropdown(false);
+                                    setFolderSearch("");
+                                    setFolderError("");
+                                    setSavedFolderMessage("");
+                                  }}
+                                  className={`mt-1 flex min-h-[32px] w-full items-center rounded-[6px] px-2 text-left text-[14px] transition hover:bg-[#EFEFEF] ${
+                                    selected ? "bg-[#D9D9D9] text-black" : "text-[#2f2f2f]"
+                                  }`}
+                                >
+                                  <span className="truncate">{folder.title}</span>
+                                </button>
+                              );
+                            })
+                          ) : (
+                            <div className="px-2 py-4 text-[13px] text-[#777777]">
+                              No folder found
+                            </div>
+                          )}
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedFolderId("__create_new__");
+                            setShowFolderDropdown(false);
+                            setFolderSearch("");
+                            setFolderError("");
+                            setSavedFolderMessage("");
+                          }}
+                          className={`mt-2 flex min-h-[32px] w-full items-center rounded-[6px] px-2 text-left text-[14px] font-semibold transition hover:bg-[#EFEFEF] ${
+                            selectedFolderId === "__create_new__"
+                              ? "bg-[#D9D9D9] text-black"
+                              : "bg-[#F1F1F1] text-black"
+                          }`}
+                        >
+                          + Add folder
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+
+                {selectedFolderId === "__create_new__" ? (
+                  <div>
+                    <label className="text-xs font-medium text-[#777777]">
+                      Folder Name <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      value={newFolderTitle}
+                      onChange={(event) => {
+                        setNewFolderTitle(event.target.value);
+                        setFolderError("");
+                      }}
+                      placeholder="Folder Name"
+                      disabled={folderSaving}
+                      className="mt-2 h-11 w-full rounded-[9px] border border-[#D6D6D6] bg-white px-3 text-sm text-black outline-none transition placeholder:text-[#9b9b9b] focus:border-black disabled:cursor-not-allowed disabled:opacity-60"
+                    />
+                  </div>
+                ) : null}
+              </div>
+            )}
+
+            {folderError ? <p className="mt-4 text-sm font-medium text-red-600">{folderError}</p> : null}
+            {savedFolderMessage ? (
+              <div
+                role="status"
+                aria-live="polite"
+                className="mt-4 flex items-start gap-2 rounded-[10px] border border-[#BBF7D0] bg-[#F7FFF9] px-3 py-2 text-sm font-semibold text-[#15803d] shadow-[0_8px_18px_rgba(34,197,94,0.10)]"
+              >
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{savedFolderMessage}</span>
+              </div>
+            ) : null}
+
+            <div className="mt-7 flex justify-end gap-4">
+              <button
+                type="button"
+                disabled={folderSaving}
+                onClick={() => setFolderModalCreator(null)}
+                className="h-10 cursor-pointer rounded-[7px] px-3 text-sm font-medium text-[#2f2f2f] transition hover:bg-[#f7f7f7] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                disabled={
+                  folderSaving ||
+                  folderLoading ||
+                  (selectedFolderId === "__create_new__" && !newFolderTitle.trim())
+                }
+                onClick={handleSaveToSelectedFolder}
+                className="h-10 cursor-pointer rounded-[7px] bg-[#171717] px-5 text-sm font-semibold text-white shadow-[0_10px_22px_rgba(0,0,0,0.18)] transition hover:bg-black active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {folderSaving
+                  ? selectedFolderId === "__create_new__"
+                    ? "Adding..."
+                    : "Saving..."
+                  : selectedFolderId === "__create_new__"
+                    ? "Add Folder"
+                    : "Save influencer"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <DetailPanel
         open={detailPanelOpen}

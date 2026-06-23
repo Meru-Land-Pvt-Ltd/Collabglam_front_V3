@@ -12,6 +12,20 @@ import { Eye } from "lucide-react";
 const COLORS = ["#FFBF00", "#5E412B", "#F57F17", "#F7E152", "#FEF55B"];
 const INVITATION_CREATOR_LIMIT = 50;
 
+function PlatformLoader({ label = "Finding creators" }: { label?: string }) {
+  return (
+    <div className="grid min-h-[240px] place-items-center px-6 py-10 text-center">
+      <div className="flex flex-col items-center">
+        <div className="relative h-14 w-14 rounded-full border border-[#D6D6D6]">
+          <div className="absolute inset-1 rounded-full border-2 border-transparent border-t-[#22c55e] animate-spin" />
+          <div className="absolute inset-0 grid place-items-center text-[18px]">▶</div>
+        </div>
+        <p className="mt-4 text-sm font-medium text-[#555555]">{label}</p>
+      </div>
+    </div>
+  );
+}
+
 type Tier = {
   key?: string;
   label?: string;
@@ -2600,21 +2614,24 @@ export default function InfluencerInvitationPage() {
         <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg bg-transparent">
           <div className="min-h-0 flex-1 overflow-y-auto px-1 py-1">
             {loading && creators.length === 0 ? (
-              showRecommendationProgress ? (
-                <div className="mx-2 mb-3 w-full">
-                  <div className="flex items-center justify-between text-[12px] font-medium text-[#9B9B9B]">
-                    <span>{recommendationProgressCount}</span>
-                    <span>{recommendationProgressTarget}</span>
-                  </div>
+              <>
+                {showRecommendationProgress ? (
+                  <div className="mx-2 mb-3 w-full">
+                    <div className="flex items-center justify-between text-[12px] font-medium text-[#9B9B9B]">
+                      <span>{recommendationProgressCount}</span>
+                      <span>{recommendationProgressTarget}</span>
+                    </div>
 
-                  <div className="mt-3 h-px w-full overflow-hidden rounded-full bg-[#E6E6E6]">
-                    <div
-                      className="h-full rounded-full bg-[#111111] transition-[width] duration-500 ease-out"
-                      style={{ width: `${recommendationProgressPercent}%` }}
-                    />
+                    <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-[#E6E6E6]">
+                      <div
+                        className="h-full rounded-full bg-[#22c55e] transition-[width] duration-500 ease-out"
+                        style={{ width: `${recommendationProgressPercent}%` }}
+                      />
+                    </div>
                   </div>
-                </div>
-              ) : null
+                ) : null}
+                <PlatformLoader label="Finding recommended creators" />
+              </>
             ) : (
               <>
                 {showRecommendationProgress ? (
@@ -2624,9 +2641,9 @@ export default function InfluencerInvitationPage() {
                       <span>{recommendationProgressTarget}</span>
                     </div>
 
-                    <div className="mt-3 h-px w-full overflow-hidden rounded-full bg-[#E6E6E6]">
+                    <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-[#E6E6E6]">
                       <div
-                        className="h-full rounded-full bg-[#111111] transition-[width] duration-500 ease-out"
+                        className="h-full rounded-full bg-[#22c55e] transition-[width] duration-500 ease-out"
                         style={{ width: `${recommendationProgressPercent}%` }}
                       />
                     </div>
@@ -2647,16 +2664,7 @@ export default function InfluencerInvitationPage() {
                   return (
                     <div
                       key={id}
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => openMediaKitForCreator(c)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault();
-                          openMediaKitForCreator(c);
-                        }
-                      }}
-                      className="creator-row-animate relative mx-2 my-1 cursor-pointer rounded-lg bg-white/42 backdrop-blur-[1px] transition-transform duration-200 ease-out will-change-transform hover:scale-[0.992] after:absolute after:bottom-0 after:left-5 after:right-5 after:h-px after:bg-black/5 after:content-[''] last:after:hidden"
+                      className="creator-row-animate relative mx-2 my-1 rounded-lg bg-white/42 backdrop-blur-[1px] after:absolute after:bottom-0 after:left-5 after:right-5 after:h-px after:bg-black/5 after:content-[''] last:after:hidden"
                       style={{
                         animationDelay: `${Math.min(index * 30, 240)}ms`,
                         transformOrigin: "center center",
@@ -2730,7 +2738,7 @@ export default function InfluencerInvitationPage() {
 
                           <Button
                             type="button"
-                            className="inline-flex h-10 items-center gap-2 rounded-full bg-[#202124] px-6 text-[14px] font-semibold text-white hover:bg-[#202124]/90 disabled:opacity-60"
+                            className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-[12px] bg-[#202124] px-6 text-[14px] font-semibold text-white hover:bg-[#202124]/90 disabled:opacity-60"
                             disabled={isSending || bulkCreating}
                             onClick={(event) => {
                               event.stopPropagation();

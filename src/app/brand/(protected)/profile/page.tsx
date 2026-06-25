@@ -1,16 +1,15 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
-  BadgeCheck,
-  Building2,
-  Globe2,
-  History,
-  Mail,
+  AlertCircle,
+  Camera,
+  ChevronDown,
+  Info,
   PencilLine,
-  Save,
-  ShieldCheck,
-  Wallet,
+  Search,
+  Upload,
+  X,
 } from "lucide-react";
 import {
   apiGetBrandProfile,
@@ -19,33 +18,10 @@ import {
   getApiErrorMessage,
 } from "../../services/brandApi";
 import { toast, ToastStyles } from "@/components/ui/toast";
-import { FloatingSelect, SelectItem } from "@/components/ui/selectComp";
 
 type QA = {
   question: string;
   answers: string[];
-};
-
-type BrandFeatureValue =
-  | string
-  | number
-  | boolean
-  | string[]
-  | {
-    unlimited?: boolean;
-    fairUsage?: boolean;
-    limit?: number;
-  }
-  | null;
-
-type BrandFeature = {
-  key?: string | null;
-  value?: BrandFeatureValue;
-  limit?: number | null;
-  used?: number | null;
-  note?: string | null;
-  resetsEvery?: string | null;
-  resetsAt?: string | null;
 };
 
 type BrandSubscription = {
@@ -58,7 +34,6 @@ type BrandSubscription = {
   annualCost?: number | null;
   startedAt?: string | null;
   expiresAt?: string | null;
-  features?: BrandFeature[] | null;
 };
 
 type BrandProfile = {
@@ -71,6 +46,16 @@ type BrandProfile = {
   profilePic?: string;
   companySize?: string;
   industry?: string;
+  website?: string;
+  phone?: string;
+  contact?: string;
+  mobile?: string;
+  region?: string;
+  country?: string;
+  currency?: string;
+  language?: string;
+  contentLanguage?: string;
+  timezone?: string;
   page1?: QA[];
   page2?: QA[];
   page3?: QA[];
@@ -100,195 +85,263 @@ type WalletData = {
   }>;
 };
 
-type PlatformOption = "Instagram" | "Youtube" | "Tiktok";
-
-type FormState = {
-  brandName: string;
-  companySize: string;
-  brandType: string;
-  industry: string;
-  platform: PlatformOption;
-};
-
-const cardClass =
-  "rounded-[24px] border border-[#ececec] bg-white shadow-[0_1px_2px_rgba(16,24,40,0.04)]";
-
-const editableWrapClass =
-  "rounded-[20px] border border-dashed border-[#F4C542] bg-[#FFFDF2] p-3 transition-all";
-
-const editableInputClass =
-  "border-[#F4C542] bg-[#FFFBEA] ring-4 ring-[#F4C542]/15 shadow-[0_0_0_1px_rgba(244,197,66,0.28)]";
-
-const INDUSTRY_OPTIONS = [
-  "Beauty & Personal Care",
-  "Fashion & Apparel",
-  "Lifestyle & Home",
-  "Health & Fitness",
-  "Technology & SaaS",
-  "Food & Beverage",
-  "Travel & Hospitality",
-  "Education",
-  "Finance & Fintech",
-  "Gaming & Entertainment",
-  "Media & Publishing",
-  "Real Estate",
-  "Sustainability & Eco Brands",
-  "Other",
-] as const;
-
-const COMPANY_SIZE_OPTIONS = [
-  "Solo / Self-employed",
-  "2–10 employees",
-  "11–50 employees",
-  "51–200 employees",
-  "201–500 employees",
-  "500+ employees",
-] as const;
-
-const BRAND_TYPES = [
-  "D2C / Consumer Brand",
-  "Marketplace",
-  "Agency (managing clients)",
-  "Startup / Early-stage brand",
-  "Enterprise / Established brand",
-  "Creator-led / Personal brand",
-] as const;
-
-const PLATFORM_OPTIONS = ["Instagram", "Youtube", "Tiktok"] as const;
-
-const FEATURE_LABELS: Record<string, string> = {
-  influencer_search_per_month: "Influencer Search",
-  influencer_profile_views_per_month: "Influencer Profile Reports",
-  invites_per_month: "Invites Per Month",
-  active_campaigns: "Active Campaigns",
-};
-
-const FEATURE_ORDER = [
-  "influencer_search_per_month",
-  "influencer_profile_views_per_month",
-  "invites_per_month",
-  "active_campaigns",
-];
-
-function formatDate(input?: string | null) {
-  if (!input) return "—";
-  const date = new Date(input);
-  if (Number.isNaN(date.getTime())) return "—";
-  return date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
-function formatMoney(value?: number | null) {
-  const safe = Number(value ?? 0);
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(safe);
-}
-
-function normalizePercent(value: number) {
-  if (!Number.isFinite(value)) return 0;
-  if (value < 0) return 0;
-  if (value > 100) return 100;
-  return value;
-}
-
-function getQaAnswer(
-  items: QA[] | undefined,
-  questionIncludes: string,
-  fallback = ""
-) {
-  const found = (items || []).find((item) =>
-    String(item?.question || "")
-      .toLowerCase()
-      .includes(questionIncludes.toLowerCase())
-  );
-  return found?.answers?.[0] || fallback;
-}
-
-function getPlatformFromPage3(items?: QA[]): PlatformOption {
-  const answer =
-    getQaAnswer(items, "preferred platform", "") ||
-    getQaAnswer(items, "platform", "");
-  const cleaned = answer.trim().toLowerCase();
-
-  if (cleaned === "instagram") return "Instagram";
-  if (cleaned === "tiktok") return "Tiktok";
-  return "Youtube";
-}
-
-function getFeatureLimit(feature: BrandFeature) {
-  if (feature?.limit === -1) return -1;
-
-  if (
-    feature?.limit !== undefined &&
-    feature?.limit !== null &&
-    Number.isFinite(Number(feature.limit))
-  ) {
-    return Number(feature.limit);
-  }
-
-  const value = feature?.value;
-
-  if (typeof value === "number") return value;
-
-  if (value && typeof value === "object" && !Array.isArray(value)) {
-    if (value.unlimited === true) return -1;
-    if (typeof value.limit === "number") return value.limit;
-  }
-
-  return 0;
-}
-
-function getFeatureLabel(key?: string | null) {
-  const normalizedKey = String(key || "").trim();
-
-  if (FEATURE_LABELS[normalizedKey]) {
-    return FEATURE_LABELS[normalizedKey];
-  }
-
-  return prettifyFeatureKey(normalizedKey);
-}
-
-function featureValueLabel(feature: BrandFeature) {
-  const limit = getFeatureLimit(feature);
-
-  if (limit === -1) return "Unlimited";
-  if (limit > 0) return String(limit);
-
-  if (
-    feature?.value !== undefined &&
-    feature?.value !== null &&
-    feature.value !== ""
-  ) {
-    if (typeof feature.value === "boolean") {
-      return feature.value ? "Included" : "Not included";
-    }
-
-    if (Array.isArray(feature.value)) {
-      return feature.value.join(", ");
-    }
-
-    if (typeof feature.value === "object") {
-      return "Included";
-    }
-
-    return String(feature.value);
-  }
-
-  return "Included";
-}
-
 type WalletApiPayload = Partial<WalletData> & {
   walletBalance?: number | null;
   frozenBalance?: number | null;
   usableBalance?: number | null;
 };
+
+type FormState = {
+  profilePic: string;
+  brandName: string;
+  brandEmail: string;
+  companySize: string;
+  pocName: string;
+  brandEmailAlias: string;
+  industry: string;
+  pocContact: string;
+  website: string;
+  companyDetails: string;
+  brandType: string;
+  role: string;
+  platform: string;
+  timezone: string;
+  currency: string;
+  region: string;
+  language: string;
+};
+
+const PLATFORM_OPTIONS = ["Youtube", "Instagram", "Tiktok"] as const;
+const TIMEZONE_OPTIONS = [
+  "GMT+5:30 Indian standard time",
+  "GMT+0:00 Greenwich mean time",
+  "GMT-5:00 Eastern standard time",
+  "GMT-8:00 Pacific standard time",
+] as const;
+const CURRENCY_OPTIONS = [
+  "$ Dollars",
+  "INR Rupees",
+  "EUR Euros",
+  "GBP Pounds",
+] as const;
+const DEFAULT_COUNTRY_OPTIONS = [
+  "All",
+  "India",
+  "United States",
+  "United Kingdom",
+  "Europe",
+] as const;
+const DEFAULT_LANGUAGE_OPTIONS = [
+  "English",
+  "Hindi",
+  "Spanish",
+  "French",
+] as const;
+
+const pageClass = "min-h-screen bg-white font-sans text-[#202020] antialiased";
+const frameClass =
+  "mx-auto flex w-full max-w-[1170px] flex-col px-[56px] pb-[56px] pt-5";
+const sectionLabelClass = "text-[15px] font-medium leading-5 text-[#9b9b9b]";
+const fieldBaseClass =
+  "h-[70px] w-full rounded-[12px] border border-[#dedede] bg-white px-3 pb-[10px] pt-[28px] text-[16px] font-medium leading-5 text-[#232323] outline-none transition placeholder:text-[#c7c7c7] focus:border-[#cfcfcf] focus:ring-2 focus:ring-black/5 disabled:cursor-not-allowed";
+const fieldDisabledClass = "bg-[#f3f3f3] text-[#c3c3c3]";
+
+type ListOptionKind = "country" | "language";
+
+const LIST_API_BASE_URL = String(
+  process.env.NEXT_PUBLIC_API_URL ||
+    process.env.NEXT_PUBLIC_BASE_URL ||
+    process.env.NEXT_PUBLIC_BACKEND_URL ||
+    "",
+).replace(/\/$/, "");
+
+function buildListApiUrl(path: string) {
+  if (/^https?:\/\//i.test(path)) return path;
+  return `${LIST_API_BASE_URL}${path}`;
+}
+
+function getAuthHeaders(): HeadersInit {
+  if (typeof window === "undefined") return {};
+
+  const token =
+    localStorage.getItem("token") ||
+    localStorage.getItem("accessToken") ||
+    localStorage.getItem("authToken") ||
+    localStorage.getItem("brandToken") ||
+    "";
+
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+function unwrapListPayload(payload: any): any[] {
+  if (Array.isArray(payload)) return payload;
+
+  const candidates = [
+    payload?.data,
+    payload?.data?.data,
+    payload?.data?.docs,
+    payload?.data?.items,
+    payload?.data?.results,
+    payload?.docs,
+    payload?.items,
+    payload?.results,
+    payload?.list,
+    payload?.countries,
+    payload?.languages,
+    payload?.contentLanguages,
+  ];
+
+  return candidates.find(Array.isArray) || [];
+}
+
+function getListOptionLabel(item: any, kind: ListOptionKind) {
+  if (typeof item === "string") return item;
+
+  const countryValues = [
+    item?.name,
+    item?.countryName,
+    item?.country,
+    item?.label,
+    item?.value,
+    item?.title,
+    item?.code,
+    item?.iso2,
+  ];
+
+  const languageValues = [
+    item?.name,
+    item?.languageName,
+    item?.language,
+    item?.label,
+    item?.value,
+    item?.title,
+    item?.code,
+  ];
+
+  return String(
+    (kind === "country" ? countryValues : languageValues).find(Boolean) || "",
+  );
+}
+
+function normalizeListOptions(
+  items: any[],
+  kind: ListOptionKind,
+  fallback: readonly string[],
+) {
+  const seen = new Set<string>();
+  const options = items
+    .map((item) => getListOptionLabel(item, kind).trim())
+    .filter(Boolean)
+    .filter((item) => {
+      const key = item.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+  return options.length ? options : [...fallback];
+}
+
+async function fetchListOptions(
+  path: string,
+  kind: ListOptionKind,
+  fallback: readonly string[],
+) {
+  const res = await fetch(buildListApiUrl(path), {
+    method: "GET",
+    headers: {
+      Accept: "application/json",
+      ...getAuthHeaders(),
+    },
+    credentials: "include",
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to fetch ${kind} list`);
+  }
+
+  const payload = await res.json();
+  return normalizeListOptions(unwrapListPayload(payload), kind, fallback);
+}
+
+function dataUrlToFile(dataUrl: string, filename: string) {
+  const [meta = "", base64 = ""] = dataUrl.split(",");
+  const mimeMatch = meta.match(/data:([^;]+);base64/i);
+  const mime = mimeMatch?.[1] || "image/png";
+  const binary = window.atob(base64);
+  const bytes = new Uint8Array(binary.length);
+
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+
+  return new File([bytes], filename, { type: mime });
+}
+
+function getUploadedPhotoDataUrl(payload: any) {
+  return firstValue(
+    payload?.dataUrl,
+    payload?.data?.dataUrl,
+    payload?.profilePic,
+    payload?.data?.profilePic,
+    payload?.profilePhoto,
+    payload?.data?.profilePhoto,
+    payload?.brandProfilePic,
+    payload?.data?.brandProfilePic,
+    payload?.url,
+    payload?.data?.url,
+    payload?.imageUrl,
+    payload?.data?.imageUrl,
+    payload?.secure_url,
+    payload?.data?.secure_url,
+  );
+}
+
+function getPayloadMessage(payload: any) {
+  return String(
+    payload?.message ||
+      payload?.data?.message ||
+      payload?.error ||
+      payload?.data?.error ||
+      "",
+  );
+}
+
+async function apiUpdateBrandProfilePhoto(dataUrl: string) {
+  const formData = new FormData();
+  const file = dataUrlToFile(dataUrl, `brand-profile-${Date.now()}.png`);
+
+  // Backend route: /brand/upload-brand-profile-pic
+  // Send only the binary file. The API response returns the saved value in dataUrl.
+  formData.append("brandProfilePic", file);
+
+  const res = await fetch(buildListApiUrl("/brand/upload-brand-profile-pic"), {
+    method: "POST",
+    headers: getAuthHeaders(),
+    credentials: "include",
+    body: formData,
+  });
+
+  const payload = await res.json().catch(() => null);
+  const message = getPayloadMessage(payload);
+  const uploadedPhoto = getUploadedPhotoDataUrl(payload);
+
+  if (!res.ok) {
+    throw new Error(
+      message ||
+        getApiErrorMessage(
+          payload,
+          "Unable to upload brand profile photo.",
+        ),
+    );
+  }
+
+  if (!uploadedPhoto) {
+    throw new Error("Profile image uploaded but dataUrl was not returned.");
+  }
+
+  return uploadedPhoto;
+}
 
 function normalizeWalletData(data: WalletApiPayload): WalletData {
   const walletBalance = Number(data?.walletBalance ?? 0);
@@ -302,57 +355,96 @@ function normalizeWalletData(data: WalletApiPayload): WalletData {
   };
 }
 
-function featureProgress(feature: BrandFeature) {
-  const used = Number(feature?.used ?? 0);
-  const limit = getFeatureLimit(feature);
-
-  if (limit === -1) return 100;
-  if (!Number.isFinite(limit) || limit <= 0) return 100;
-
-  return normalizePercent((used / limit) * 100);
+function getQaAnswer(
+  items: QA[] | undefined,
+  questionIncludes: string,
+  fallback = "",
+) {
+  const found = (items || []).find((item) =>
+    String(item?.question || "")
+      .toLowerCase()
+      .includes(questionIncludes.toLowerCase()),
+  );
+  return found?.answers?.[0] || fallback;
 }
 
-function prettifyFeatureKey(value?: string | null) {
-  return String(value || "Feature")
-    .replace(/_per_month/g, "")
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-function getBrandType(profile: BrandProfile | null) {
-  const value =
-    getQaAnswer(profile?.page1, "what type of brand", "") ||
-    getQaAnswer(profile?.page1, "brand type", "");
-
-  if (BRAND_TYPES.includes(value as (typeof BRAND_TYPES)[number])) return value;
-  return BRAND_TYPES[0];
-}
-
-function getIndustry(profile: BrandProfile | null) {
-  const value = profile?.industry || "";
-  if (INDUSTRY_OPTIONS.includes(value as (typeof INDUSTRY_OPTIONS)[number])) {
-    return value;
-  }
-  return "Other";
-}
-
-function getCompanySize(profile: BrandProfile | null) {
-  const value = profile?.companySize || "";
-  if (
-    COMPANY_SIZE_OPTIONS.includes(value as (typeof COMPANY_SIZE_OPTIONS)[number])
-  ) {
-    return value;
-  }
-  return COMPANY_SIZE_OPTIONS[0];
+function firstValue(...values: Array<string | null | undefined>) {
+  return values.find((value) => String(value || "").trim()) || "";
 }
 
 function getInitialForm(profile: BrandProfile | null): FormState {
   return {
-    brandName: profile?.brandName || "",
-    companySize: getCompanySize(profile),
-    brandType: getBrandType(profile),
-    industry: getIndustry(profile),
-    platform: getPlatformFromPage3(profile?.page3),
+    profilePic: firstValue(profile?.profilePic, ""),
+    brandName: firstValue(profile?.brandName, profile?.name, "Nike"),
+    brandEmail: firstValue(profile?.email, "Brand@nike.com"),
+    companySize: firstValue(profile?.companySize, "5-10"),
+    pocName: firstValue(
+      profile?.name,
+      getQaAnswer(profile?.page1, "poc"),
+      "Aditya",
+    ),
+    brandEmailAlias: firstValue(
+      profile?.proxyEmail,
+      getQaAnswer(profile?.page1, "email alias"),
+      "nike@mail.collabglam.com",
+    ),
+    industry: firstValue(profile?.industry, "Brand@nike.com"),
+    pocContact: firstValue(
+      profile?.phone,
+      profile?.contact,
+      profile?.mobile,
+      getQaAnswer(profile?.page1, "contact"),
+      "999-999-9999",
+    ),
+    website: firstValue(
+      profile?.website,
+      getQaAnswer(profile?.page1, "website"),
+      "www.nike.com",
+    ),
+    companyDetails: firstValue(
+      getQaAnswer(profile?.page2, "company details"),
+      getQaAnswer(profile?.page1, "company details"),
+      "",
+    ),
+    brandType: firstValue(
+      getQaAnswer(profile?.page1, "brand type"),
+      getQaAnswer(profile?.page1, "type of brand"),
+      "Footwear",
+    ),
+    role: firstValue(
+      getQaAnswer(profile?.page2, "role"),
+      getQaAnswer(profile?.page1, "role"),
+      "Campaign Manager",
+    ),
+    platform: firstValue(
+      getQaAnswer(profile?.page3, "preferred platform"),
+      getQaAnswer(profile?.page3, "platform"),
+      "Youtube",
+    ),
+    timezone: firstValue(
+      profile?.timezone,
+      getQaAnswer(profile?.page3, "time zone"),
+      "GMT+5:30 Indian standard time",
+    ),
+    currency: firstValue(
+      profile?.currency,
+      getQaAnswer(profile?.page3, "currency"),
+      "$ Dollars",
+    ),
+    region: firstValue(
+      profile?.region,
+      profile?.country,
+      getQaAnswer(profile?.page3, "country"),
+      getQaAnswer(profile?.page3, "region"),
+      "All",
+    ),
+    language: firstValue(
+      profile?.language,
+      profile?.contentLanguage,
+      getQaAnswer(profile?.page3, "preferred language"),
+      getQaAnswer(profile?.page3, "language"),
+      "English",
+    ),
   };
 }
 
@@ -369,25 +461,34 @@ function initialsFromName(value?: string) {
 export default function BrandProfilePage() {
   const [brandId, setBrandId] = useState("");
   const [brand, setBrand] = useState<BrandProfile | null>(null);
-  const [wallet, setWallet] = useState<WalletData | null>(null);
-  const [form, setForm] = useState<FormState>({
-    brandName: "",
-    companySize: COMPANY_SIZE_OPTIONS[0],
-    brandType: BRAND_TYPES[0],
-    industry: "Other",
-    platform: "Youtube",
-  });
+  const [, setWallet] = useState<WalletData | null>(null);
+  const [form, setForm] = useState<FormState>(() => getInitialForm(null));
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [showProfileAlert, setShowProfileAlert] = useState(true);
+  const [countryOptions, setCountryOptions] = useState<string[]>(() => [
+    ...DEFAULT_COUNTRY_OPTIONS,
+  ]);
+  const [languageOptions, setLanguageOptions] = useState<string[]>(() => [
+    ...DEFAULT_LANGUAGE_OPTIONS,
+  ]);
+  const uploadInputRef = useRef<HTMLInputElement | null>(null);
+  const cameraInputRef = useRef<HTMLInputElement | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const cameraStreamRef = useRef<MediaStream | null>(null);
+  const cameraSessionRef = useRef(0);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [cameraLoading, setCameraLoading] = useState(false);
+  const [cameraError, setCameraError] = useState("");
 
   useEffect(() => {
     const storedBrandId =
       typeof window !== "undefined"
         ? localStorage.getItem("brandId") ||
-        localStorage.getItem("brand_id") ||
-        localStorage.getItem("userId") ||
-        ""
+          localStorage.getItem("brand_id") ||
+          localStorage.getItem("userId") ||
+          ""
         : "";
 
     if (!storedBrandId) {
@@ -404,6 +505,48 @@ export default function BrandProfilePage() {
   }, []);
 
   useEffect(() => {
+    return () => {
+      cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+      cameraStreamRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadLists = async () => {
+      const [countriesResult, languagesResult] = await Promise.allSettled([
+        fetchListOptions(
+          "/list/countries?limit=300",
+          "country",
+          DEFAULT_COUNTRY_OPTIONS,
+        ),
+        fetchListOptions(
+          "/list/content-languages?limit=300",
+          "language",
+          DEFAULT_LANGUAGE_OPTIONS,
+        ),
+      ]);
+
+      if (!active) return;
+
+      if (countriesResult.status === "fulfilled") {
+        setCountryOptions(countriesResult.value);
+      }
+
+      if (languagesResult.status === "fulfilled") {
+        setLanguageOptions(languagesResult.value);
+      }
+    };
+
+    loadLists();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!brandId) return;
 
     const run = async () => {
@@ -416,10 +559,8 @@ export default function BrandProfilePage() {
         ]);
 
         const profile = profileRes as BrandProfile;
-        const walletData = normalizeWalletData(walletRes as WalletApiPayload);
-
         setBrand(profile);
-        setWallet(walletData);
+        setWallet(normalizeWalletData(walletRes as WalletApiPayload));
         setForm(getInitialForm(profile));
       } catch (err) {
         toast({
@@ -427,7 +568,7 @@ export default function BrandProfilePage() {
           title: "Failed to load profile",
           text: getApiErrorMessage(
             err,
-            "Something went wrong while fetching brand profile."
+            "Something went wrong while fetching brand profile.",
           ),
         });
       } finally {
@@ -438,37 +579,12 @@ export default function BrandProfilePage() {
     run();
   }, [brandId]);
 
-  const subscription = useMemo(() => brand?.subscription ?? null, [brand]);
+  const displayName = useMemo(
+    () => brand?.brandName || brand?.name || form.brandName || "Nike",
+    [brand?.brandName, brand?.name, form.brandName],
+  );
 
-  const metrics = useMemo(() => {
-    const features = Array.isArray(subscription?.features)
-      ? subscription.features
-      : [];
-
-    const featureMap = new Map(
-      features
-        .filter((feature) => feature?.key)
-        .map((feature) => [String(feature.key), feature])
-    );
-
-    return FEATURE_ORDER.map((key) => featureMap.get(key))
-      .filter((feature): feature is BrandFeature => Boolean(feature))
-      .map((feature) => {
-        const limit = getFeatureLimit(feature);
-
-        return {
-          label: getFeatureLabel(feature.key),
-          usedText:
-            limit === -1
-              ? `${feature?.used ?? 0} / Unlimited`
-              : `${feature?.used ?? 0} / ${featureValueLabel(feature)}`,
-          percent: featureProgress(feature),
-        };
-      });
-  }, [subscription]);
-
-  const displayName = brand?.name || brand?.brandName || "Brand Admin";
-  const logo = brand?.profilePic || "";
+  const logo = form.profilePic || brand?.profilePic || "";
 
   const onChange = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -477,11 +593,133 @@ export default function BrandProfilePage() {
   const onCancel = () => {
     setEditing(false);
     setForm(getInitialForm(brand));
-    toast({
-      icon: "info",
-      title: "Changes discarded",
-      text: "Your profile form was reset.",
-    });
+  };
+
+  const handleImageFile = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      toast({
+        icon: "error",
+        title: "Invalid file",
+        text: "Please upload an image file for your profile photo.",
+      });
+      event.target.value = "";
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      onChange("profilePic", String(reader.result || ""));
+      event.target.value = "";
+    };
+    reader.onerror = () => {
+      toast({
+        icon: "error",
+        title: "Upload failed",
+        text: "Unable to read the selected image. Please try another file.",
+      });
+      event.target.value = "";
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const stopCamera = () => {
+    cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+    cameraStreamRef.current = null;
+
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+  };
+
+  const closeCamera = () => {
+    cameraSessionRef.current += 1;
+    stopCamera();
+    setCameraOpen(false);
+    setCameraLoading(false);
+    setCameraError("");
+  };
+
+  const openCamera = async () => {
+    if (formLocked) return;
+
+    if (
+      typeof navigator === "undefined" ||
+      !navigator.mediaDevices?.getUserMedia
+    ) {
+      cameraInputRef.current?.click();
+      return;
+    }
+
+    try {
+      setCameraOpen(true);
+      setCameraLoading(true);
+      setCameraError("");
+      stopCamera();
+
+      const sessionId = cameraSessionRef.current + 1;
+      cameraSessionRef.current = sessionId;
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: { facingMode: "user" },
+      });
+
+      if (sessionId !== cameraSessionRef.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+
+      cameraStreamRef.current = stream;
+
+      const attachStream = () => {
+        if (sessionId !== cameraSessionRef.current) return;
+
+        if (!videoRef.current) {
+          window.setTimeout(attachStream, 0);
+          return;
+        }
+
+        videoRef.current.srcObject = stream;
+        videoRef.current.play().catch(() => undefined);
+      };
+
+      attachStream();
+    } catch (err) {
+      setCameraError(
+        "Camera permission was blocked or no camera was found. You can still choose a photo from your device.",
+      );
+      cameraInputRef.current?.click();
+    } finally {
+      setCameraLoading(false);
+    }
+  };
+
+  const capturePhoto = () => {
+    const video = videoRef.current;
+
+    if (!video) {
+      setCameraError("Camera is not ready yet. Please try again.");
+      return;
+    }
+
+    const width = video.videoWidth || 640;
+    const height = video.videoHeight || 640;
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+
+    const context = canvas.getContext("2d");
+    if (!context) {
+      setCameraError("Unable to capture photo. Please try again.");
+      return;
+    }
+
+    context.drawImage(video, 0, 0, width, height);
+    onChange("profilePic", canvas.toDataURL("image/png"));
+    closeCamera();
   };
 
   const onSave = async () => {
@@ -490,14 +728,68 @@ export default function BrandProfilePage() {
     try {
       setSaving(true);
 
+      let profilePicToSave = form.profilePic;
+
+      if (profilePicToSave.startsWith("data:image/")) {
+        profilePicToSave = await apiUpdateBrandProfilePhoto(profilePicToSave);
+        setForm((prev) => ({ ...prev, profilePic: profilePicToSave }));
+      }
+
       await apiUpdateBrandProfile({
         brandId,
+        profilePic: profilePicToSave,
+        dataUrl: profilePicToSave,
         brandName: form.brandName,
+        name: form.pocName,
+        email: form.brandEmail,
+        proxyEmail: form.brandEmailAlias,
         companySize: form.companySize,
         brandType: form.brandType,
-      });
+        industry: form.industry,
+        phone: form.pocContact,
+        contact: form.pocContact,
+        mobile: form.pocContact,
+        website: form.website,
+        companyDetails: form.companyDetails,
+        role: form.role,
+        platform: form.platform,
+        timezone: form.timezone,
+        currency: form.currency,
+        region: form.region,
+        country: form.region,
+        language: form.language,
+        contentLanguage: form.language,
+        page1: [
+          { question: "Tell us about brand type?", answers: [form.brandType] },
+          { question: "POC Name", answers: [form.pocName] },
+          { question: "POC Contact", answers: [form.pocContact] },
+          { question: "Website", answers: [form.website] },
+          { question: "Company Size", answers: [form.companySize] },
+          { question: "Brand Email Alias", answers: [form.brandEmailAlias] },
+        ],
+        page2: [
+          { question: "Company Details", answers: [form.companyDetails] },
+          {
+            question: "Tell us about your role in Organisation ?",
+            answers: [form.role],
+          },
+        ],
+        page3: [
+          { question: "Preferred platform?", answers: [form.platform] },
+          { question: "Time zone", answers: [form.timezone] },
+          { question: "Currency format", answers: [form.currency] },
+          { question: "Select Country", answers: [form.region] },
+          { question: "Select Region", answers: [form.region] },
+          {
+            question: "What is your preferred language ?",
+            answers: [form.language],
+          },
+        ],
+      } as any);
 
-      const updatedProfile = (await apiGetBrandProfile(brandId)) as BrandProfile;
+      const updatedProfile = (await apiGetBrandProfile(
+        brandId,
+      )) as BrandProfile;
       setBrand(updatedProfile);
       setForm(getInitialForm(updatedProfile));
       setEditing(false);
@@ -518,548 +810,614 @@ export default function BrandProfilePage() {
     }
   };
 
+  const formLocked = loading;
+
   return (
-    <div className="min-h-screen bg-[#f7f7f8] px-4 py-6 md:px-6 lg:px-8">
+    <div className={pageClass}>
       <ToastStyles />
 
-      <div className="mx-auto max-w-[1380px]">
-        <div className="mb-6 flex flex-col gap-4 rounded-[28px] border border-[#ececec] bg-white px-5 py-4 shadow-[0_1px_2px_rgba(16,24,40,0.04)] md:flex-row md:items-center md:justify-between md:px-6">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#111111] text-sm font-semibold text-white">
-              C
-            </div>
-            <div>
-              <p className="text-[18px] font-semibold text-[#111111]">
-                Collabglam
-              </p>
-              <p className="text-sm text-[#666666]">Brand workspace</p>
-            </div>
+      <main className={frameClass}>
+        {showProfileAlert ? (
+          <ProfileAlert onClose={() => setShowProfileAlert(false)} />
+        ) : null}
+
+        <section className={`flex w-full items-start justify-between gap-8 ${showProfileAlert ? "mt-5" : ""}`}>
+          <div>
+            <h1 className="text-[24px] font-semibold leading-8 tracking-[-0.02em] text-[#202020]">
+              Profile
+            </h1>
+            <p className="mt-2 text-[14px] leading-5 text-[#a0a0a0]">
+              This is where you manage profile details specific to you. To
+              manage what communication you receive from Collabglam.
+            </p>
           </div>
 
-          <div className="flex items-center gap-3 self-end md:self-auto">
-            <div className="text-right">
-              <p className="text-sm font-medium text-[#111111]">
-                {displayName}
-              </p>
-              <p className="text-xs text-[#8b8b8b]">Brand Admin</p>
+          <button
+            type="button"
+            aria-pressed={editing}
+            onClick={() => setEditing(true)}
+            className="mt-0 inline-flex h-[46px] items-center justify-center gap-2 rounded-[12px] border border-[#dedede] bg-white px-5 text-[14px] font-semibold text-[#232323] shadow-[0_1px_2px_rgba(0,0,0,0.03)] transition hover:bg-[#fafafa]"
+          >
+            <PencilLine className="h-4 w-4" />
+            Edit Profile
+          </button>
+        </section>
+
+        <section className="w-full pt-[56px]">
+          <h2 className={sectionLabelClass}>Profile Picture</h2>
+
+          <div className="mt-6 flex items-center gap-[31px]">
+            <div className="flex h-[116px] w-[116px] shrink-0 items-center justify-center overflow-hidden rounded-full bg-black text-[30px] font-semibold text-white">
+              {logo ? (
+                <img
+                  src={logo}
+                  alt={displayName}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <span>{initialsFromName(displayName)}</span>
+              )}
             </div>
-            {logo ? (
-              <img
-                src={logo}
-                alt={displayName}
-                className="h-10 w-10 rounded-full object-cover ring-1 ring-[#ececec]"
-              />
-            ) : (
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#eceff4] text-sm font-semibold text-[#111111] ring-1 ring-[#ececec]">
-                {initialsFromName(displayName)}
+
+            <div className="pt-1">
+              <p className="text-[17px] font-semibold leading-6 text-[#252525]">
+                Upload your photo
+              </p>
+              <p className="text-[12px] font-medium leading-5 text-[#a5a5a5]">
+                Photo should be at least 250px x 250px
+              </p>
+              <div className="mt-3 flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={formLocked}
+                  onClick={() => uploadInputRef.current?.click()}
+                  className="inline-flex h-[34px] items-center gap-2 rounded-[7px] bg-black px-[18px] text-[12px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Upload className="h-3.5 w-3.5" />
+                  upload
+                </button>
+                <button
+                  type="button"
+                  disabled={formLocked}
+                  onClick={openCamera}
+                  className="inline-flex h-[34px] items-center gap-2 rounded-[7px] border border-[#dfdfdf] bg-white px-[13px] text-[12px] font-semibold text-[#232323] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Camera className="h-3.5 w-3.5" />
+                  Take a Photo
+                </button>
+                <input
+                  ref={uploadInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageFile}
+                  className="hidden"
+                />
+                <input
+                  ref={cameraInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="user"
+                  onChange={handleImageFile}
+                  className="hidden"
+                />
               </div>
+            </div>
+          </div>
+        </section>
+
+        {cameraOpen ? (
+          <CameraCaptureModal
+            videoRef={videoRef}
+            loading={cameraLoading}
+            error={cameraError}
+            onClose={closeCamera}
+            onCapture={capturePhoto}
+          />
+        ) : null}
+
+        <section className="w-full pt-[56px]">
+          <h2 className={sectionLabelClass}>Personal Info</h2>
+
+          <div className="mt-6 grid grid-cols-3 gap-x-[22px] gap-y-5">
+            <ProfileInput
+              label="Brand Name"
+              value={form.brandName}
+              disabled={formLocked}
+              onChange={(value) => onChange("brandName", value)}
+            />
+            <ProfileInput
+              label="Brand Email"
+              value={form.brandEmail}
+              disabled
+              muted
+            />
+            <ProfileInput
+              label="Company Size"
+              value={form.companySize}
+              disabled={formLocked}
+              onChange={(value) => onChange("companySize", value)}
+            />
+            <ProfileInput
+              label="POC Name"
+              value={form.pocName}
+              disabled={formLocked}
+              onChange={(value) => onChange("pocName", value)}
+            />
+            <ProfileInput
+              label="Brand Email Alias"
+              value={form.brandEmailAlias}
+              disabled
+              muted
+              info
+            />
+            <ProfileInput
+              label="Industry Name"
+              value={form.industry}
+              disabled={formLocked}
+              onChange={(value) => onChange("industry", value)}
+            />
+            <ProfileInput
+              label="POC Contact"
+              value={form.pocContact}
+              disabled={formLocked}
+              onChange={(value) => onChange("pocContact", value)}
+            />
+            <ProfileInput
+              label="Website"
+              value={form.website}
+              disabled={formLocked}
+              onChange={(value) => onChange("website", value)}
+            />
+          </div>
+        </section>
+
+        <section className="w-full pt-[56px]">
+          <div className="relative min-h-[292px] rounded-[14px] border border-[#dedede] bg-white px-[13px] py-[18px]">
+            <div>
+              <p className="text-[15px] font-medium leading-5 text-[#9b9b9b]">
+                Company Details
+              </p>
+            </div>
+            <textarea
+              value={form.companyDetails}
+              disabled={formLocked}
+              onChange={(event) =>
+                onChange("companyDetails", event.target.value)
+              }
+              placeholder={
+                "Describe your campaign goals, product details, and what creators should focus on.\n\nYou can paste links to your website, product pages, reference videos, or brand guidelines."
+              }
+              className="mt-[30px] h-[205px] w-full resize-none border-none bg-transparent text-[14px] font-medium leading-7 text-[#232323] outline-none placeholder:text-[#c7c7c7] disabled:cursor-not-allowed"
+            />
+          </div>
+        </section>
+
+        <section className="w-full pt-[56px]">
+          <h2 className={sectionLabelClass}>Onboarding Questions</h2>
+          <div className="mt-6 grid grid-cols-2 gap-x-[22px] gap-y-5">
+            <ProfileInput
+              label="Tell us about brand type?"
+              value={form.brandType}
+              disabled={formLocked}
+              onChange={(value) => onChange("brandType", value)}
+            />
+            <ProfileInput
+              label="Tell us about your role in Organisation ?"
+              value={form.role}
+              disabled={formLocked}
+              onChange={(value) => onChange("role", value)}
+            />
+            <PlatformField
+              value={form.platform}
+              disabled={formLocked}
+              onChange={(value) => onChange("platform", value)}
+            />
+          </div>
+        </section>
+
+        <section className="w-full pt-[56px]">
+          <h2 className={sectionLabelClass}>Demographic Details</h2>
+          <p className="mt-1 text-[11px] font-medium leading-4 text-[#b8b8b8]">
+            When you schedule campaigns, we'll use this time zone as a
+            reference.
+          </p>
+
+          <div className="mt-5 grid grid-cols-2 gap-x-[22px] gap-y-5">
+            <ProfileSelect
+              label="Time zone"
+              value={form.timezone}
+              options={TIMEZONE_OPTIONS}
+              disabled={formLocked}
+              onChange={(value) => onChange("timezone", value)}
+            />
+            <ProfileSelect
+              label="Currency format"
+              value={form.currency}
+              options={CURRENCY_OPTIONS}
+              disabled={formLocked}
+              onChange={(value) => onChange("currency", value)}
+            />
+            <ProfileSelect
+              label="Select Country"
+              value={form.region}
+              options={countryOptions}
+              disabled={formLocked}
+              onChange={(value) => onChange("region", value)}
+            />
+            <ProfileSelect
+              label="Preferred language"
+              value={form.language}
+              options={languageOptions}
+              disabled={formLocked}
+              onChange={(value) => onChange("language", value)}
+            />
+          </div>
+        </section>
+
+        <footer className="flex w-full items-center justify-end gap-[41px] pt-[56px]">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={saving}
+            className="h-[46px] text-[16px] font-bold text-[#232323] disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onSave}
+            disabled={saving || loading}
+            className="h-[54px] min-w-[145px] rounded-[13px] border border-[#dedede] bg-white px-8 text-[16px] font-bold text-[#232323] shadow-[0_4px_12px_rgba(0,0,0,0.04)] transition hover:bg-[#fafafa] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {saving ? "Updating..." : "Update"}
+          </button>
+        </footer>
+      </main>
+    </div>
+  );
+}
+
+function CameraCaptureModal({
+  videoRef,
+  loading,
+  error,
+  onClose,
+  onCapture,
+}: {
+  videoRef: React.RefObject<HTMLVideoElement | null>;
+  loading: boolean;
+  error: string;
+  onClose: () => void;
+  onCapture: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/55 px-4">
+      <div className="w-full max-w-[460px] overflow-hidden rounded-[20px] bg-white shadow-[0_24px_70px_rgba(0,0,0,0.25)]">
+        <div className="flex h-[58px] items-center justify-between border-b border-[#ededed] px-5">
+          <p className="text-[17px] font-semibold text-[#232323]">
+            Take a Photo
+          </p>
+          <button
+            type="button"
+            aria-label="Close camera"
+            onClick={onClose}
+            className="rounded-full p-1 text-[#555555] transition hover:bg-[#f2f2f2]"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="bg-black">
+          <video
+            ref={videoRef}
+            autoPlay
+            muted
+            playsInline
+            className="aspect-square w-full object-cover"
+          />
+        </div>
+
+        {loading ? (
+          <p className="px-5 pt-4 text-[13px] font-medium text-[#777777]">
+            Opening camera...
+          </p>
+        ) : null}
+
+        {error ? (
+          <p className="px-5 pt-4 text-[13px] font-medium text-[#d2452f]">
+            {error}
+          </p>
+        ) : null}
+
+        <div className="flex items-center justify-end gap-3 px-5 py-5">
+          <button
+            type="button"
+            onClick={onClose}
+            className="h-[42px] rounded-[10px] border border-[#dedede] bg-white px-5 text-[14px] font-semibold text-[#232323] transition hover:bg-[#fafafa]"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onCapture}
+            disabled={loading}
+            className="h-[42px] rounded-[10px] bg-black px-5 text-[14px] font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Capture Photo
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProfileAlert({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="flex h-[69px] w-full items-center justify-between rounded-[7px] bg-[#ffe9e0] px-[19px]">
+      <div className="flex items-center gap-[13px]">
+        <AlertCircle className="h-[21px] w-[21px] text-[#ff623a]" />
+        <div>
+          <p className="text-[14px] font-bold leading-5 text-[#3a3a3a]">
+            Profile Not Completed.
+          </p>
+          <p className="text-[13px] font-medium leading-5 text-[#a99a95]">
+            Complete the onboarding questions to finish setting up your account.
+          </p>
+        </div>
+      </div>
+      <button
+        type="button"
+        aria-label="Close alert"
+        onClick={onClose}
+        className="p-1 text-[#333333] transition hover:opacity-70"
+      >
+        <X className="h-5 w-5" />
+      </button>
+    </div>
+  );
+}
+
+function ProfileInput({
+  label,
+  value,
+  placeholder,
+  disabled,
+  muted,
+  info,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  placeholder?: string;
+  disabled?: boolean;
+  muted?: boolean;
+  info?: boolean;
+  onChange?: (value: string) => void;
+}) {
+  return (
+    <label className="relative block">
+      <span className="absolute left-3 top-[11px] z-10 flex items-center gap-1 text-[14px] font-medium leading-5 text-[#a2a2a2]">
+        {label}
+        {info ? <Info className="h-3.5 w-3.5 text-[#b8b8b8]" /> : null}
+      </span>
+      <input
+        value={value}
+        placeholder={placeholder}
+        disabled={disabled}
+        onChange={(event) => onChange?.(event.target.value)}
+        className={`${fieldBaseClass} ${muted ? fieldDisabledClass : ""}`}
+      />
+    </label>
+  );
+}
+
+function ProfileSelect({
+  label,
+  value,
+  options,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: readonly string[];
+  disabled?: boolean;
+  onChange: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+
+  const optionList = useMemo(() => {
+    const seen = new Set<string>();
+    return [value, ...options]
+      .map((option) => String(option || "").trim())
+      .filter(Boolean)
+      .filter((option) => {
+        const key = option.toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+  }, [options, value]);
+
+  const filteredOptions = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return optionList;
+
+    return optionList.filter((option) => option.toLowerCase().includes(query));
+  }, [optionList, search]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const closeOnOutsideClick = (event: MouseEvent | TouchEvent) => {
+      const target = event.target as Node | null;
+      if (!target || wrapperRef.current?.contains(target)) return;
+      setOpen(false);
+      setSearch("");
+    };
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setOpen(false);
+      setSearch("");
+    };
+
+    document.addEventListener("mousedown", closeOnOutsideClick);
+    document.addEventListener("touchstart", closeOnOutsideClick);
+    document.addEventListener("keydown", closeOnEscape);
+
+    return () => {
+      document.removeEventListener("mousedown", closeOnOutsideClick);
+      document.removeEventListener("touchstart", closeOnOutsideClick);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const timer = window.setTimeout(() => searchInputRef.current?.focus(), 0);
+    return () => window.clearTimeout(timer);
+  }, [open]);
+
+  return (
+    <div ref={wrapperRef} className="relative block">
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => {
+          if (disabled) return;
+          setOpen((prev) => !prev);
+        }}
+        className={`relative h-[58px] w-full rounded-[12px] border bg-white px-3 pb-[8px] pt-[24px] text-left text-[15px] font-medium leading-5 text-[#232323] outline-none transition disabled:cursor-not-allowed ${
+          open
+            ? "rounded-[16px] border-2 border-black shadow-[0_8px_20px_rgba(0,0,0,0.05)]"
+            : "border-[#dedede] hover:border-[#cfcfcf]"
+        }`}
+      >
+        <span className="absolute left-3 top-[8px] z-10 text-[13px] font-medium leading-5 text-[#a2a2a2]">
+          {label}
+        </span>
+        <span className="block truncate pr-10">{value || label}</span>
+        <ChevronDown
+          className={`pointer-events-none absolute right-4 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#b8b8b8] transition-transform ${
+            open ? "rotate-180" : ""
+          }`}
+        />
+      </button>
+
+      {open ? (
+        <div className="absolute bottom-[calc(100%+6px)] left-0 z-50 w-full overflow-hidden rounded-[16px] border border-[#d7d7d7] bg-white shadow-[0_14px_34px_rgba(0,0,0,0.12)]">
+          <div className="flex h-[50px] items-center gap-3 border-b border-[#d8d8d8] px-4">
+            <Search className="h-5 w-5 shrink-0 text-[#777777]" />
+            <input
+              ref={searchInputRef}
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search..."
+              className="h-full w-full bg-transparent text-[17px] font-normal leading-none text-[#232323] outline-none placeholder:text-[#8f8f8f]"
+            />
+          </div>
+
+          <div className="max-h-[260px] overflow-y-auto py-2">
+            {filteredOptions.length ? (
+              filteredOptions.map((option) => {
+                const selected = option === value;
+
+                return (
+                  <button
+                    key={option}
+                    type="button"
+                    onClick={() => {
+                      onChange(option);
+                      setOpen(false);
+                      setSearch("");
+                    }}
+                    className={`block w-[calc(100%-16px)] rounded-[7px] px-4 py-2.5 text-left text-[16px] font-normal leading-6 text-[#242424] transition hover:bg-[#eeeeee] ${
+                      selected ? "mx-2 bg-[#e9e9e9]" : "mx-2 bg-white"
+                    }`}
+                  >
+                    {option}
+                  </button>
+                );
+              })
+            ) : (
+              <p className="px-4 py-5 text-[15px] font-medium text-[#8f8f8f]">
+                No results found
+              </p>
             )}
           </div>
         </div>
-
-        <div className="space-y-6 rounded-[32px] border border-[#eaeaea] bg-white p-5 shadow-[0_1px_2px_rgba(16,24,40,0.04)] md:p-7">
-          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-            <div>
-              <h1 className="text-[32px] font-semibold tracking-[-0.02em] text-[#111111]">
-                Brand Profile
-              </h1>
-              <p className="mt-1 text-[15px] text-[#6b6b6b]">
-                Manage your brand information and settings
-              </p>
-            </div>
-
-            <div className="flex flex-wrap gap-3">
-              {editing ? (
-                <>
-                  <button
-                    onClick={onCancel}
-                    className="inline-flex h-11 items-center justify-center rounded-full border border-[#ebebeb] bg-white px-5 text-sm font-medium text-[#111111] transition hover:bg-[#fafafa]"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={onSave}
-                    disabled={saving}
-                    className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-[#111111] px-5 text-sm font-medium text-white transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    <Save className="h-4 w-4" />
-                    {saving ? "Saving..." : "Save Changes"}
-                  </button>
-                </>
-              ) : (
-                <button
-                  onClick={() => setEditing(true)}
-                  className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-[#ebebeb] bg-white px-5 text-sm font-medium text-[#111111] transition hover:bg-[#fafafa]"
-                >
-                  <PencilLine className="h-4 w-4" />
-                  Edit Profile
-                </button>
-              )}
-            </div>
-          </div>
-
-          {editing ? (
-            <div className="rounded-[20px] border border-[#F4C542] bg-[#FFFBEA] px-4 py-3 text-sm text-[#7A5B00]">
-              Highlighted fields are editable now. Brand Email, Email alias, and
-              Role At Brand stay read-only.
-            </div>
-          ) : null}
-
-          {loading ? (
-            <div className="grid gap-6">
-              {Array.from({ length: 4 }).map((_, idx) => (
-                <div key={idx} className={`${cardClass} p-6`}>
-                  <div className="animate-pulse space-y-4">
-                    <div className="h-4 w-44 rounded bg-[#efefef]" />
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <div className="h-12 rounded-2xl bg-[#f3f3f3]" />
-                      <div className="h-12 rounded-2xl bg-[#f3f3f3]" />
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <>
-              <section className={`${cardClass} p-5 md:p-6`}>
-                <div className="mb-5 flex items-center gap-2">
-                  <Building2 className="h-4 w-4 text-[#111111]" />
-                  <h2 className="text-[18px] font-semibold text-[#111111]">
-                    Brand Identity
-                  </h2>
-                </div>
-
-                <div className="grid gap-5 lg:grid-cols-[180px_minmax(0,1fr)]">
-                  <div className="flex flex-col items-start gap-3">
-                    <div className="relative h-[110px] w-[110px] overflow-hidden rounded-full border border-[#e8e8e8] bg-[#f2f4f7]">
-                      {logo ? (
-                        <img
-                          src={logo}
-                          alt={displayName}
-                          className="h-full w-full object-cover"
-                        />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center text-2xl font-semibold text-[#111111]">
-                          {initialsFromName(displayName)}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <EditableInputField
-                      label="Brand Name"
-                      value={form.brandName}
-                      editable={editing}
-                      onChange={(value) => onChange("brandName", value)}
-                    />
-
-                    <ReadonlyField
-                      label="Brand Email"
-                      value={brand?.email || "—"}
-                      icon={<Mail className="h-4 w-4 text-[#7a7a7a]" />}
-                    />
-
-                    <ReadonlyField
-                      label="Email alias"
-                      value={brand?.proxyEmail || "—"}
-                    />
-
-                    <EditableSelectField
-                      label="Platform"
-                      value={form.platform}
-                      editable={editing}
-                      options={PLATFORM_OPTIONS}
-                      onChange={(value) =>
-                        onChange("platform", value as PlatformOption)
-                      }
-                    />
-                  </div>
-                </div>
-              </section>
-
-              <div className="grid gap-6 lg:grid-cols-2">
-                <section className={`${cardClass} p-5 md:p-6`}>
-                  <div className="mb-5 flex items-center gap-2">
-                    <ShieldCheck className="h-4 w-4 text-[#111111]" />
-                    <h2 className="text-[18px] font-semibold text-[#111111]">
-                      Brand Information
-                    </h2>
-                  </div>
-
-                  <div className="space-y-4">
-                    <EditableSelectField
-                      label="Brand Type"
-                      value={form.brandType}
-                      editable={editing}
-                      options={BRAND_TYPES}
-                      onChange={(value) => onChange("brandType", value)}
-                    />
-
-                    <EditableSelectField
-                      label="Industry"
-                      value={form.industry}
-                      editable={editing}
-                      options={INDUSTRY_OPTIONS}
-                      onChange={(value) => onChange("industry", value)}
-                    />
-
-                    <EditableSelectField
-                      label="Company Size"
-                      value={form.companySize}
-                      editable={editing}
-                      options={COMPANY_SIZE_OPTIONS}
-                      onChange={(value) => onChange("companySize", value)}
-                    />
-                  </div>
-                </section>
-
-                <section className={`${cardClass} p-5 md:p-6`}>
-                  <div className="mb-5 flex items-center gap-2">
-                    <Globe2 className="h-4 w-4 text-[#111111]" />
-                    <h2 className="text-[18px] font-semibold text-[#111111]">
-                      Platforms
-                    </h2>
-                  </div>
-
-                  <div className="space-y-3">
-                    <ReadonlyField
-                      label="Brand Name"
-                      value={form.brandName || "—"}
-                    />
-
-                    <EditableSelectField
-                      label="Preferred Platform"
-                      value={form.platform}
-                      editable={editing}
-                      options={PLATFORM_OPTIONS}
-                      onChange={(value) =>
-                        onChange("platform", value as PlatformOption)
-                      }
-                    />
-
-                    <ReadonlyField
-                      label="Role At Brand"
-                      value={getQaAnswer(brand?.page2, "role", "—") || "—"}
-                    />
-                  </div>
-                </section>
-              </div>
-
-              <section className={`${cardClass} overflow-hidden`}>
-                <div className="flex flex-col gap-4 border-b border-[#efefef] px-5 py-5 md:flex-row md:items-start md:justify-between md:px-6">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <BadgeCheck className="h-4 w-4 text-[#111111]" />
-                      <h2 className="text-[18px] font-semibold text-[#111111]">
-                        Subscription Plan
-                      </h2>
-                    </div>
-                    <p className="mt-1 text-sm text-[#6b6b6b]">
-                      Current tier and monthly consumption
-                    </p>
-                  </div>
-
-                  <button className="inline-flex h-11 items-center justify-center rounded-full border border-[#e9e9e9] bg-white px-5 text-sm font-medium text-[#111111] hover:bg-[#fafafa]">
-                    Upgrade Subscription
-                  </button>
-                </div>
-
-                <div className="space-y-6 px-5 py-6 md:px-6">
-                  <div className="grid gap-5 md:grid-cols-4">
-                    <MetaBlock
-                      label="Plan Name"
-                      value={subscription?.planName || subscription?.name || "No Plan"}
-                    />
-                    <MetaBlock
-                      label="Status"
-                      value={subscription?.status || "Inactive"}
-                      pill
-                    />
-                    <MetaBlock
-                      label="Start Date"
-                      value={formatDate(subscription?.startedAt)}
-                    />
-                    <MetaBlock
-                      label="Expiry Date"
-                      value={formatDate(subscription?.expiresAt)}
-                    />
-                  </div>
-
-                  <div>
-                    <p className="mb-4 text-sm font-semibold text-[#111111]">
-                      Usage Metrics
-                    </p>
-                    {metrics.length ? (
-                      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                        {metrics.map((item) => (
-                          <div
-                            key={item.label}
-                            className="space-y-2 rounded-2xl border border-[#efefef] p-4"
-                          >
-                            <div className="flex items-center justify-between gap-3">
-                              <p className="text-sm font-medium text-[#111111]">
-                                {item.label}
-                              </p>
-                              <p className="text-xs text-[#6b6b6b]">
-                                {item.usedText}
-                              </p>
-                            </div>
-                            <div className="h-2 overflow-hidden rounded-full bg-[#efefef]">
-                              <div
-                                className="h-full rounded-full bg-[#22c55e]"
-                                style={{ width: `${item.percent}%` }}
-                              />
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="rounded-2xl border border-dashed border-[#e5e7eb] bg-[#fafafa] p-5 text-sm text-[#6b6b6b]">
-                        No subscription metrics available.
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </section>
-
-              <section className={`${cardClass} p-5 md:p-6`}>
-                <div className="grid gap-4 rounded-[24px] bg-[#f8f8f9] p-5 md:grid-cols-[1.4fr_1fr_1fr_auto] md:items-center">
-                  <div className="flex items-center gap-4">
-                    <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#111111] text-white shadow-[0_6px_18px_rgba(17,17,17,0.15)]">
-                      <Wallet className="h-6 w-6" />
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#6b6b6b]">
-                        Wallet Balance
-                      </p>
-                      <div className="mt-1 flex items-end gap-2">
-                        <span className="text-[38px] font-semibold leading-none tracking-[-0.03em] text-[#111111]">
-                          {formatMoney(wallet?.walletBalance)}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <WalletInfo
-                    label="Usable"
-                    value={formatMoney(wallet?.usableBalance)}
-                  />
-                  <WalletInfo
-                    label="Frozen"
-                    value={formatMoney(wallet?.frozenBalance)}
-                  />
-                </div>
-              </section>
-
-              <section className={`${cardClass} overflow-hidden`}>
-                <div className="flex items-center gap-2 border-b border-[#efefef] px-5 py-5 md:px-6">
-                  <History className="h-4 w-4 text-[#111111]" />
-                  <h2 className="text-[18px] font-semibold text-[#111111]">
-                    Payment History
-                  </h2>
-                </div>
-
-                <div className="overflow-x-auto">
-                  <table className="min-w-full">
-                    <thead>
-                      <tr className="border-b border-[#f0f0f0] bg-white text-left">
-                        {["Item", "Details", "Amount", "Status", "Action"].map(
-                          (head) => (
-                            <th
-                              key={head}
-                              className="px-5 py-4 text-xs font-semibold uppercase tracking-[0.08em] text-[#7a7a7a] md:px-6"
-                            >
-                              {head}
-                            </th>
-                          )
-                        )}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(wallet?.freezes?.length || 0) > 0 ? (
-                        wallet?.freezes.map((freeze, index) => (
-                          <tr
-                            key={`${freeze.campaignId}-${index}`}
-                            className="border-b border-[#f6f6f6]"
-                          >
-                            <td className="px-5 py-5 text-sm font-medium text-[#111111] md:px-6">
-                              Freeze #{index + 1}
-                            </td>
-                            <td className="px-5 py-5 text-sm text-[#4b5563] md:px-6">
-                              Campaign frozen amount
-                            </td>
-                            <td className="px-5 py-5 text-sm font-medium text-[#111111] md:px-6">
-                              {formatMoney(freeze.totalFrozenAmount)}
-                            </td>
-                            <td className="px-5 py-5 text-sm text-[#4b5563] md:px-6">
-                              Frozen
-                            </td>
-                            <td className="px-5 py-5 md:px-6">
-                              <button className="inline-flex h-9 items-center rounded-full border border-[#ececec] bg-white px-4 text-xs font-medium text-[#111111] hover:bg-[#fafafa]">
-                                View
-                              </button>
-                            </td>
-                          </tr>
-                        ))
-                      ) : (
-                        <tr>
-                          <td
-                            colSpan={5}
-                            className="px-5 py-8 text-center text-sm text-[#6b6b6b] md:px-6"
-                          >
-                            No payment history available yet.
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </section>
-            </>
-          )}
-        </div>
-      </div>
+      ) : null}
     </div>
   );
 }
 
-function ReadonlyField({
-  label,
+function PlatformField({
   value,
-  icon,
-}: {
-  label: string;
-  value: string;
-  icon?: React.ReactNode;
-}) {
-  return (
-    <div>
-      <label className="mb-2 block text-[13px] font-medium text-[#111111]">
-        {label}
-      </label>
-      <div className="flex min-h-[52px] items-center gap-2 rounded-2xl border border-[#e9e9e9] bg-white px-4 text-sm text-[#111111]">
-        {icon}
-        <span className="truncate">{value}</span>
-      </div>
-    </div>
-  );
-}
-
-function EditableInputField({
-  label,
-  value,
-  editable,
+  disabled,
   onChange,
 }: {
-  label: string;
   value: string;
-  editable: boolean;
+  disabled?: boolean;
   onChange: (value: string) => void;
 }) {
-  if (!editable) return <ReadonlyField label={label} value={value || "—"} />;
-
   return (
-    <div className={editableWrapClass}>
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <label className="block text-[13px] font-medium text-[#111111]">
-          {label}
-        </label>
-        <span className="inline-flex rounded-full bg-[#F4C542] px-2.5 py-1 text-[11px] font-semibold text-[#111111]">
-          Editable
-        </span>
-      </div>
-
-      <input
+    <label className="relative block max-w-[529px]">
+      <span className="absolute left-3 top-[11px] z-10 text-[14px] font-medium leading-5 text-[#a2a2a2]">
+        Preferred platform?
+      </span>
+      <select
         value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className={`flex min-h-[52px] w-full items-center rounded-2xl border px-4 text-sm text-[#111111] outline-none transition ${editableInputClass} focus:border-[#D9A900] focus:ring-4 focus:ring-[#F4C542]/20`}
-      />
-    </div>
-  );
-}
-
-function EditableSelectField({
-  label,
-  value,
-  editable,
-  options,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  editable: boolean;
-  options: readonly string[];
-  onChange: (value: string) => void;
-}) {
-  if (!editable) {
-    return (
-      <ReadonlyField
-        label={label}
-        value={value || "—"}
-        icon={<Globe2 className="h-4 w-4 text-[#7a7a7a]" />}
-      />
-    );
-  }
-
-  return (
-    <div className={editableWrapClass}>
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <label className="block text-[13px] font-medium text-[#111111]">
-          {label}
-        </label>
-        <span className="inline-flex rounded-full bg-[#F4C542] px-2.5 py-1 text-[11px] font-semibold text-[#111111]">
-          Editable
-        </span>
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+        className="h-[70px] w-full appearance-none rounded-[12px] border border-[#dedede] bg-white px-3 pb-[10px] pt-[31px] text-[0px] outline-none transition focus:border-[#cfcfcf] focus:ring-2 focus:ring-black/5 disabled:cursor-not-allowed"
+      >
+        {PLATFORM_OPTIONS.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+      <div className="pointer-events-none absolute bottom-[12px] left-3 flex items-center gap-1.5">
+        <SocialDot type="youtube" active={value.toLowerCase() === "youtube"} />
+        <SocialDot
+          type="instagram"
+          active={value.toLowerCase() === "instagram"}
+        />
+        <SocialDot type="tiktok" active={value.toLowerCase() === "tiktok"} />
       </div>
-
-      <div className={`rounded-2xl ${editableInputClass}`}>
-        <FloatingSelect label={label} value={value} onValueChange={onChange}>
-          {options.map((option) => (
-            <SelectItem key={option} value={option}>
-              {option}
-            </SelectItem>
-          ))}
-        </FloatingSelect>
-      </div>
-    </div>
+    </label>
   );
 }
 
-function MetaBlock({
-  label,
-  value,
-  pill = false,
+function SocialDot({
+  type,
+  active,
 }: {
-  label: string;
-  value: string;
-  pill?: boolean;
+  type: "youtube" | "instagram" | "tiktok";
+  active: boolean;
 }) {
-  return (
-    <div>
-      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7a7a7a]">
-        {label}
-      </p>
-      {pill ? (
-        <span className="mt-3 inline-flex rounded-full border border-[#e8e8e8] bg-[#fafafa] px-3 py-1 text-sm font-medium text-[#111111]">
-          {value}
-        </span>
-      ) : (
-        <p className="mt-3 text-[20px] font-semibold text-[#111111]">
-          {value}
-        </p>
-      )}
-    </div>
-  );
-}
+  const classes = {
+    youtube: "bg-[#ff0000] text-white",
+    instagram:
+      "bg-gradient-to-tr from-[#feda75] via-[#d62976] to-[#4f5bd5] text-white",
+    tiktok: "bg-black text-white",
+  }[type];
 
-function WalletInfo({ label, value }: { label: string; value: string }) {
+  const label = {
+    youtube: "▶",
+    instagram: "●",
+    tiktok: "♪",
+  }[type];
+
   return (
-    <div>
-      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#6b6b6b]">
-        {label}
-      </p>
-      <p className="mt-1 text-lg font-semibold text-[#111111]">{value}</p>
-    </div>
+    <span
+      className={`flex h-[18px] w-[18px] items-center justify-center rounded-full text-[8px] font-bold shadow-[0_1px_2px_rgba(0,0,0,0.12)] ${classes} ${active ? "ring-2 ring-black/10" : "opacity-70"}`}
+    >
+      {label}
+    </span>
   );
 }

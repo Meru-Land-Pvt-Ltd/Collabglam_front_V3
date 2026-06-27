@@ -670,13 +670,13 @@ export default function SharedPitchFolderPage() {
                       <th className="px-4 py-3.5 text-left text-[11px] font-bold uppercase tracking-widest text-slate-500">
                         Demographics
                       </th>
-                      <th
+                      {/* <th
                         className={`px-4 py-3.5 text-center text-[11px] font-bold uppercase tracking-widest text-slate-500 ${getStickyFitCellClass(
                           true
                         )}`}
                       >
                         Fit
-                      </th>
+                      </th> */}
                     </tr>
                   </thead>
 
@@ -816,7 +816,7 @@ export default function SharedPitchFolderPage() {
                             ) : null}
                           </td>
 
-                          <td
+                          {/* <td
                             className={`px-4 py-4 text-center align-top ${getStickyFitCellClass()} group-hover:bg-slate-50/80`}
                           >
                             <div className="flex justify-center">
@@ -827,7 +827,7 @@ export default function SharedPitchFolderPage() {
                                 onToggle={(v) => saveGoodFit(row._id, v)}
                               />
                             </div>
-                          </td>
+                          </td> */}
                         </tr>
                       );
                     })}
